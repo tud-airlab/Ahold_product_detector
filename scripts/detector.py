@@ -309,6 +309,7 @@ class ProductDetector:
             annotator2 = Annotator(rotated_rgb_image)
             boxes = r.boxes
             labels = r.boxes.cls.cpu().numpy()
+            highest_score_index = None
 
             if draw_colored_boxes:
                 # Ensure the barcode is an integer for comparison
