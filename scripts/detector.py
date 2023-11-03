@@ -9,7 +9,7 @@ import numpy as np
 from multi_object_tracker import Tracker
 
 # message and service imports
-from sensor_msgs.msg import Image, PointCloud2, CameraInfo, CompressedImage
+from sensor_msgs.msg import Image, PointCloud2, CameraInfo, Image, CompressedImage
 from jsk_recognition_msgs.msg import (
     BoundingBox,
     BoundingBoxArrayWithCameraInfo,
@@ -25,6 +25,66 @@ from opencv_helpers import RotatedRectCorners, RotatedRect
 from copy import copy
 from rotation_compensation import RotationCompensation
 
+from std_msgs.msg import Bool
+
+product_mapping  = {
+0: 8710400280507,
+1: 8718907400718,
+2: 8718907457583,
+3: 8718907400701,
+4: 8718906697560,
+5: 8718907056274,
+6: 8710400035862,
+7: 8710400687122,
+8: 8718907056311,
+9: 8710400145981,
+10: 8718907306744,
+11: 8718907306775,
+12: 8718907306737,
+13: 8718907306751,
+14: 8718907056298,
+15: 8710400011668,
+16: 3083681149630,
+17: 3083681025484,
+18: 3083681068146,
+19: 3083681126471,
+20: 3083681068122,
+21: 8712800147008,
+22: 8712800147770,
+23: 8714100795699,
+24: 8714100795774,
+25: 8720600612848,
+26: 8720600609893,
+27: 8720600606731,
+28: 8717662264382,
+29: 8717662264368,
+30: 87343267,
+31: 8710400514107,
+32: 8718906872844,
+33: 8718907039987,
+34: 8710400416395,
+35: 8718907039963,
+36: 5414359921711,
+37: 8718906948631,
+38: 8718265082151,
+39: 8718906536265,
+40: 8718951065826,
+41: 3574661734712,
+42: 8006540896778,
+43: 8720181388774,
+44: 90453656,
+45: 90453533,
+46: 5410013114697,
+47: 5410013136149,
+48: 80042556,
+49: 80042563,
+50: 8005110170324,
+51: 8001250310415,
+52: 8004690052044,
+53: 8718906124066,
+54: 8718906124073,
+55: 9999,
+}
 
 class CameraData:
     def __init__(self) -> None:
@@ -77,9 +137,38 @@ class ProductDetector:
         )
         self.model = ultralytics.YOLO(weight_path)
         self.pub = rospy.Publisher("/detection_results", Detection, queue_size=10)
-        self.pub_img = rospy.Publisher("/detection_image", CompressedImage, queue_size=10)
+        self.pub_img = rospy.Publisher("/detection_image", Image, queue_size=10)
+        self.pub_img_compressed = rospy.Publisher("/detection_image_compressed", CompressedImage, queue_size=10)
+        self.pub_img_barcode = rospy.Publisher("/detection_image_barcode", Image, queue_size=10)
 
         self.bridge = CvBridge()
+
+        self._currently_recording = False
+        self._currently_playback = False
+        self.start_tablet_subscribers()
+        self._barcode = None
+        self._check_barcode_timer = rospy.Timer(rospy.Duration(0.1), self.check_barcode_update)
+
+
+    def start_playback_callback(self, msg):
+        if msg.data:
+            self._currently_playback = True
+
+    def stop_playback_callback(self, msg):
+        if msg.data:
+            self._currently_playback = False
+
+    def start_record_callback(self, msg):
+        if msg.data:
+            self._currently_recording = True
+            self._barcode = rospy.get_param("/barcode")
+            rospy.loginfo(f"Start recording with barcode: {self._barcode}")
+            rospy.loginfo(f"Barcode type: {type(self._barcode)}")  # Add this line
+
+    def stop_record_callback(self, msg):
+        if msg.data:
+            self._currently_recording = False
+
 
     def plot_detection_results(self, frame, results):
         for r in results:
@@ -132,6 +221,19 @@ class ProductDetector:
         detection_msg.detections = bboxes_list
 
         return detection_msg
+
+    def start_tablet_subscribers(self):
+        self._start_record_sub = rospy.Subscriber("/tablet/start_record", Bool, self.start_record_callback)
+        self._stop_record_sub = rospy.Subscriber("/tablet/stop_record", Bool, self.stop_record_callback)
+        self._playback_subscriber = rospy.Subscriber("/tablet/start_playback", Bool, self.start_playback_callback)
+        self._stop_playback_subscriber = rospy.Subscriber("/tablet/stop_playback", Bool, self.stop_playback_callback)
+
+    def check_barcode_update(self, event):
+        new_barcode = rospy.get_param("/barcode", None)
+        if new_barcode != self._barcode:
+            rospy.loginfo(f"Barcode parameter changed from {self._barcode} to {new_barcode}")
+            self._barcode = new_barcode
+
 
     def run(self):
         try:
@@ -193,7 +295,50 @@ class ProductDetector:
 
         frame = annotator.result()
         compressed_image = self.bridge.cv2_to_compressed_imgmsg(frame)
-        self.pub_img.publish(compressed_image)
+        self.pub_img_compressed.publish(compressed_image)
+        raw_image = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+        self.pub_img.publish(raw_image)
+
+
+        # Draw colored boxes based on the barcode and tabled state
+        
+        # Check if recording is active and a barcode is set
+        draw_colored_boxes = self._currently_recording and self._barcode is not None
+
+        for r in results:
+            annotator2 = Annotator(rotated_rgb_image)
+            boxes = r.boxes
+            labels = r.boxes.cls.cpu().numpy()
+
+            if draw_colored_boxes:
+                # Ensure the barcode is an integer for comparison
+                barcode = int(self._barcode) if self._barcode.isdigit() else None
+
+                # Filter boxes that match the barcode
+                matching_boxes_indices = [i for i, label in enumerate(labels) if product_mapping.get(int(label), None) == barcode]
+
+                # Find the highest score among the matching boxes
+                if matching_boxes_indices:
+                    highest_score_index = matching_boxes_indices[np.argmax(scores[matching_boxes_indices])]
+
+            for i, box in enumerate(boxes):
+                label_index = int(labels[i])  # Convert label to int
+                # Default color
+                box_color = (128, 128, 128)
+
+                # If the barcode matches and this is the box with the highest score among those that match
+                if draw_colored_boxes and i == highest_score_index:
+                    rospy.loginfo(f"Matched barcode with highest score, drawing green box.")
+                    box_color = (0, 255, 0)  # Green for the highest score among matching barcodes
+
+                # Draw the box with the determined color
+                annotator2.box_label(box.xyxy[0], label=f'{self.model.names[label_index]} {scores[i]:.2f}', color=box_color)
+
+        # Convert the annotated frame to a ROS image message and publish
+        frame_with_barcode = annotator2.result()
+        raw_image_barcode = self.bridge.cv2_to_imgmsg(frame_with_barcode, encoding="bgr8")
+        self.pub_img_barcode.publish(raw_image_barcode)
+
 
         # visualization
         # self.plot_detection_results(rotated_rgb_image, results)
