@@ -46,11 +46,17 @@ class ProductTracker():
 
         self.measure = False
         self.count = 0
+        self.num_classes = 56 # number of yolo classes 
         
 
     def change_product_cb(self, request):
         rospy.loginfo(f"Changing tracked product from {self.tracker.requested_yolo_id} to {request.product_id}")
-        self.tracker.requested_yolo_id = request.product_id
+        if request.product_id > self.num_classes: # Cover the barcode case
+            mapping = 'mapping_barcode_to_yolo/'+str(request.product_id)
+            prod_id = rospy.get_param(mapping)
+        else:
+            prod_id = request.product_id
+        self.tracker.requested_yolo_id = prod_id
         self.measure = True
         return ChangeProductResponse(success=True)
     
