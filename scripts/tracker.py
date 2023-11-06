@@ -9,7 +9,7 @@ from ahold_product_detection.msg import ProductPoseArray
 from ahold_product_detection.srv import ChangeProduct, ChangeProductResponse
 import time
 
-VELOCITY = True
+VELOCITY = False
 
 class PoseData():
 
@@ -79,9 +79,9 @@ class ProductTracker():
         if self.measure:
             self.count = self.count + 1
 
-        if self.count > 300:
-            print("Done tracking for 300 iterations")
-            return False
+        # if self.count > 300:
+        #     print("Done tracking for 300 iterations")
+        #     return False
         
         return True
 

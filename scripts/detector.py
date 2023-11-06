@@ -133,7 +133,7 @@ class ProductDetector:
             os.path.dirname(os.path.abspath(__file__)),
             "..",
             "yolo_model",
-            "best.pt",
+            "best_complete.pt",
         )
         self.model = ultralytics.YOLO(weight_path)
         self.pub = rospy.Publisher("/detection_results", Detection, queue_size=10)
@@ -305,8 +305,8 @@ class ProductDetector:
         # Draw colored boxes based on the barcode and tabled state
         
         # Check if recording is active and a barcode is set
-        draw_colored_boxes = self._currently_recording and self._barcode is not None
-
+        #draw_colored_boxes = self._currently_recording and self._barcode is not None
+        draw_colored_boxes = True
         for r in results:
             annotator2 = Annotator(rotated_rgb_image)
             boxes = r.boxes
@@ -331,7 +331,7 @@ class ProductDetector:
 
                 # If the barcode matches and this is the box with the highest score among those that match
                 if draw_colored_boxes and i == highest_score_index:
-                    rospy.loginfo(f"Matched barcode with highest score, drawing green box.")
+                    # rospy.loginfo(f"Matched barcode with highest score, drawing green box.")
                     box_color = (0, 255, 0)  # Green for the highest score among matching barcodes
 
                 # Draw the box with the determined color

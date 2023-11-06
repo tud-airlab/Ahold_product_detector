@@ -372,8 +372,8 @@ def main():
     listener = tf.TransformListener()
     robot = rospy.get_param('/robot')
     ethernet = rospy.get_param('/ethernet')
-    print(robot)
-    print(ethernet)
+    # print(robot)
+    # print(ethernet)
     rospy.sleep(1)
 
     # Initialize kalman filter for object tracking
