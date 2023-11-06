@@ -173,11 +173,15 @@ class PoseEstimator:
                 ) = xyz_detection
                 product_pose.score = bbox.score
                 product_pose.label = bbox.label
-
+                product_pose.u = bbox.x
+                product_pose.v = bbox.y
+                product_pose.w = bbox.w
+                product_pose.h = bbox.h
                 product_poses.poses.append(product_pose)
 
         # Transform to non-moving frame
         transformed_product_poses = self.transform_poses(product_poses)
+
         # Create jsk boundingboxes
         detections = BoundingBoxArray()
         detections.header.frame_id = "base_link"

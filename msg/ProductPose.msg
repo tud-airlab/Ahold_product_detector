@@ -7,3 +7,8 @@ float64 phi
 float64 psi
 uint32 label
 float32 score
+
+float64 u
+float64 v
+float64 w
+float64 h

@@ -149,6 +149,11 @@ class ProductDetector:
         self._barcode = None
         self._check_barcode_timer = rospy.Timer(rospy.Duration(0.1), self.check_barcode_update)
 
+        self._assigned_detection_subscriber = rospy.Subscriber('/assigned_detection_image_coordinates', Float32MultiArray, self.assigned_detection_cb)
+        self._assigned_detection_uv = [0, 0]
+
+    def assigned_detection_cb(self, msg):
+        self._assigned_detection_uv = msg.data
 
     def start_playback_callback(self, msg):
         if msg.data:
@@ -161,7 +166,7 @@ class ProductDetector:
     def start_record_callback(self, msg):
         if msg.data:
             self._currently_recording = True
-            self._barcode = rospy.get_param("/barcode")
+            self._barcode = rospy.get_param("/barcode")            
             rospy.loginfo(f"Start recording with barcode: {self._barcode}")
             rospy.loginfo(f"Barcode type: {type(self._barcode)}")  # Add this line
 
@@ -273,8 +278,6 @@ class ProductDetector:
         boxes, angle = self.rotation_compensation.rotate_bounding_boxes(
             results[0].boxes.xywh.cpu().numpy(), rgb_image
         )
-        
-
         scores = results[0].boxes.conf.cpu().numpy()
         labels = results[0].boxes.cls.cpu().numpy()
         detection_results_msg = self.generate_detection_message(
@@ -313,16 +316,19 @@ class ProductDetector:
             labels = r.boxes.cls.cpu().numpy()
             highest_score_index = None
 
-            if draw_colored_boxes:
-                # Ensure the barcode is an integer for comparison
-                barcode = int(self._barcode) if self._barcode.isdigit() else None
+            # if draw_colored_boxes:
+            #     # Ensure the barcode is an integer for comparison
+            #     barcode = int(self._barcode) if self._barcode.isdigit() else None
 
-                # Filter boxes that match the barcode
-                matching_boxes_indices = [i for i, label in enumerate(labels) if product_mapping.get(int(label), None) == barcode]
+            #     # Filter boxes that match the barcode
+            #     matching_boxes_indices = [i for i, label in enumerate(labels) if product_mapping.get(int(label), None) == barcode]
 
-                # Find the highest score among the matching boxes
-                if matching_boxes_indices:
-                    highest_score_index = matching_boxes_indices[np.argmax(scores[matching_boxes_indices])]
+            #     # Find the highest score among the matching boxes
+            #     if matching_boxes_indices:
+            #         highest_score_index = matching_boxes_indices[np.argmax(scores[matching_boxes_indices])]
+
+            # closest to previous tracked detection
+            closest_detection_index = np.argmin([np.linalg.norm(box.xywh[:2] - self._assigned_detection_uv) for box in boxes])
 
             for i, box in enumerate(boxes):
                 label_index = int(labels[i])  # Convert label to int
@@ -330,7 +336,7 @@ class ProductDetector:
                 box_color = (128, 128, 128)
 
                 # If the barcode matches and this is the box with the highest score among those that match
-                if draw_colored_boxes and i == highest_score_index:
+                if draw_colored_boxes and i == closest_detection_index: #highest_score_index:
                     rospy.loginfo(f"Matched barcode with highest score, drawing green box.")
                     box_color = (0, 255, 0)  # Green for the highest score among matching barcodes
 

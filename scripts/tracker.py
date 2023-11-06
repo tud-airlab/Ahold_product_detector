@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import rospy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32MultiArray
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 import tf2_ros
 import tf
@@ -42,6 +42,7 @@ class ProductTracker():
         self.rate = rospy.Rate(self.frequency) # track products at 30 Hz
         self.change_product = rospy.Service("change_product", ChangeProduct, self.change_product_cb)
         self.publish_is_tracked = rospy.Publisher("~is_tracked", Bool, queue_size=10)
+        self.publish_image_coordinates = rospy.Publisher("~assigned_detection_image_coordinates", Float32MultiArray, queue_size=10)
         self.is_tracked = Bool(False)
 
         self.measure = False
@@ -76,12 +77,13 @@ class ProductTracker():
         # Publish if tracked
         self.is_tracked.data = self.tracker.requested_product_tracked
         self.publish_is_tracked.publish(self.is_tracked)
-        if self.measure:
-            self.count = self.count + 1
 
-        if self.count > 300:
-            print("Done tracking for 300 iterations")
-            return False
+        # Publish the u, w image coordinates of the assigned detection
+        self.assigned_detection_image_coordinates = [
+            product_poses[self.tracker.assigned_track.latest_measurement_idx].u,
+            product_poses[self.tracker.assigned_track.latest_measurement_idx].v
+        ]
+        self.publish_image_coordinates.publish(self.assigned_detection_image_coordinates)
         
         return True
 

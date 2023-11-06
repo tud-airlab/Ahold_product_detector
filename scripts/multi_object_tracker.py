@@ -17,7 +17,7 @@ else:
 
 class Track:
 
-    def __init__(self, measurement, classification, score, track_id, frequency):
+    def __init__(self, measurement, classification, score, track_id, frequency, latest_measurement_idx):
         self.velocity = VELOCITY
         if self.velocity: # velocity
             state = np.array(measurement + [0, 0, 0, 0, 0, 0]) 
@@ -34,6 +34,7 @@ class Track:
         self.occurance = None
         self.range_threshold = 2.0
         self.previous_measurement = np.array([0, 0, 0, 0, 0, 0])
+        self.latest_measurement_idx = latest_measurement_idx
         self.classifications = self.update_classifications_and_scores(self.classifications, classification, score)
 
 
@@ -140,6 +141,7 @@ class Tracker:
         
         product_to_grasp = self.choose_desired_product_occurance()
         self.requested_product_tracked = product_to_grasp != None
+        self.assigned_track = product_to_grasp
         if self.requested_product_tracked:
             self.broadcast_product_to_grasp(product_to_grasp)
         #self.visualize(xyz, product_to_grasp)
@@ -307,7 +309,7 @@ class Tracker:
         # Initialize tracks
         if len(self.tracks) == 0:
             for i, measurement in enumerate(measurements):
-                self.tracks.append(Track(measurement, classifications[i], scores[i], self.current_track_id, current_frequency))
+                self.tracks.append(Track(measurement, classifications[i], scores[i], self.current_track_id, current_frequency, i))
                 self.current_track_id += 1
         
         if len(measurements) > 0:
@@ -323,6 +325,7 @@ class Tracker:
             # Update state of existing tracks with measurement
             for track_idx, measurement_idx in assignment:
                 self.tracks[track_idx].update(measurements[measurement_idx], classifications[measurement_idx], scores[measurement_idx], current_frequency)
+                self.tracks[track_idx].latest_measurement_idx = measurement_idx
                 self.tracks[track_idx].skipped_frames = 0
                 self.tracks[track_idx].frequencies = []
     
@@ -332,7 +335,7 @@ class Tracker:
             assigned_det_idxs = [det_idx for _, det_idx in assignment]
             for i, det in enumerate(measurements):
                 if i not in assigned_det_idxs:
-                    self.tracks.append(Track(det, classifications[i], scores[i], self.current_track_id, current_frequency))
+                    self.tracks.append(Track(det, classifications[i], scores[i], self.current_track_id, current_frequency, i))
                     self.current_track_id += 1
 
             # Propagate unassigned tracks using the prediction 
