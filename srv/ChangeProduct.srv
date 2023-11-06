@@ -1,4 +1,4 @@
-int32 product_id
+int64 product_id
 
 ---
 bool success
