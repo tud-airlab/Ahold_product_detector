@@ -9,6 +9,7 @@ import numpy as np
 from multi_object_tracker import Tracker
 
 # message and service imports
+from std_msgs.msg import Float32MultiArray
 from sensor_msgs.msg import Image, PointCloud2, CameraInfo, Image, CompressedImage
 from jsk_recognition_msgs.msg import (
     BoundingBox,
@@ -133,7 +134,7 @@ class ProductDetector:
             os.path.dirname(os.path.abspath(__file__)),
             "..",
             "yolo_model",
-            "best.pt",
+            "best_complete.pt",
         )
         self.model = ultralytics.YOLO(weight_path)
         self.pub = rospy.Publisher("/detection_results", Detection, queue_size=10)
@@ -308,8 +309,8 @@ class ProductDetector:
         # Draw colored boxes based on the barcode and tabled state
         
         # Check if recording is active and a barcode is set
-        draw_colored_boxes = self._currently_recording and self._barcode is not None
-
+        #draw_colored_boxes = self._currently_recording and self._barcode is not None
+        draw_colored_boxes = True
         for r in results:
             annotator2 = Annotator(rotated_rgb_image)
             boxes = r.boxes

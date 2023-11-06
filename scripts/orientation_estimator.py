@@ -229,9 +229,9 @@ class OrientationEstimator:
         
         small_bounding_box = self.resize_bounding_box(bounding_box, 0.5) # half the size of the bounding box
 
-        print(bounding_box)
-        print(small_bounding_box)
-        print()
+        # print(bounding_box)
+        # print(small_bounding_box)
+        # print()
 
         #self.get_bbox_pointcloud(small_bounding_box)
         self.get_bbox_pointcloud_random(small_bounding_box, num_points=125)
