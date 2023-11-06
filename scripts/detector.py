@@ -273,6 +273,8 @@ class ProductDetector:
         boxes, angle = self.rotation_compensation.rotate_bounding_boxes(
             results[0].boxes.xywh.cpu().numpy(), rgb_image
         )
+        
+
         scores = results[0].boxes.conf.cpu().numpy()
         labels = results[0].boxes.cls.cpu().numpy()
         detection_results_msg = self.generate_detection_message(
@@ -342,9 +344,9 @@ class ProductDetector:
 
 
         # visualization
-        # self.plot_detection_results(rotated_rgb_image, results)
-        # self.show_rotated_results(rgb_image, boxes, angle)
-        # cv2.waitKey(1)
+        #self.plot_detection_results(rotated_rgb_image, results)
+        #self.show_rotated_results(rgb_image, boxes, angle)
+        #cv2.waitKey(1)
 
 
 import time

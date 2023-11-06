@@ -14,6 +14,9 @@ find_package(catkin REQUIRED COMPONENTS
   tf_conversions
   tf2_ros
   jsk_recognition_msgs
+  pcl_conversions
+  pcl_ros
+  message_filters
 )
 
 
@@ -62,3 +65,4 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
 )
+

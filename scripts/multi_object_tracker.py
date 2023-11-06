@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import rospy
 import numpy as np
-from kalman_filter import KalmanFilter, StateSpaceModel
 from collections import deque
 import cv2
 from scipy.optimize import linear_sum_assignment
@@ -10,14 +9,22 @@ import tf2_ros
 from geometry_msgs.msg import TransformStamped
 import os
 from opencv_helpers import RotatedRect
-
+VELOCITY = True
+if VELOCITY:
+    from kalman_filter_velocity import KalmanFilter
+else:
+    from kalman_filter import KalmanFilter, StateSpaceModel
 
 class Track:
 
     def __init__(self, measurement, classification, score, track_id, frequency):
-        state = np.array(measurement) 
-        self.KF = KalmanFilter(init_state=state, frequency=frequency, model=StateSpaceModel.load_model("../state_space_models/position.yaml"))
-        self.trace = None
+        self.velocity = VELOCITY
+        if self.velocity: # velocity
+            state = np.array(measurement + [0, 0, 0, 0, 0, 0]) 
+            self.KF = KalmanFilter(init_state=state, frequency=frequency)
+        else:
+            state = np.array(measurement) 
+            self.KF = KalmanFilter(init_state=state, frequency=frequency, model=StateSpaceModel.load_model("../state_space_models/position.yaml", frequency))
         self.track_id = track_id
         self.skipped_frames = 0
         self.classifications = {}
@@ -26,7 +33,8 @@ class Track:
         self.score = None
         self.occurance = None
         self.range_threshold = 2.0
-        self.classifications = self.update_cache(self.classifications, classification, score)
+        self.previous_measurement = np.array([0, 0, 0, 0, 0, 0])
+        self.classifications = self.update_classifications_and_scores(self.classifications, classification, score)
 
 
     @property
@@ -39,7 +47,7 @@ class Track:
 
     @property
     def dist(self):
-        pos = self.trace
+        pos = np.array(self.KF.state)
         dist = np.linalg.norm(pos[:2])
         return dist
     
@@ -58,8 +66,7 @@ class Track:
         return self.KF.pred_err_cov
 
 
-    def update_cache(self, cache, classification, score):
-        # Move all stored data points up one position
+    def update_classifications_and_scores(self, cache, classification, score):
         if classification == None or score == None:
             return cache
         
@@ -73,7 +80,7 @@ class Track:
     def update(self, measurement, classification, score, frequency):
         # Add classification to classifications
         if classification == classification and score == score:
-            self.classifications = self.update_cache(self.classifications, classification, score)
+            self.classifications = self.update_classifications_and_scores(self.classifications, classification, score)
 
             self.calculate_classification_and_score()
 
@@ -84,8 +91,17 @@ class Track:
             freq = 1/(sum([1/f for f in self.frequencies]) + 1/frequency)
             self.KF.update_matrices(freq)
 
-        # Update the state based on the new measurements
-        self.KF.update(np.array(measurement).reshape(6, 1))
+        # Update the state based on the new measurements\
+        if self.velocity:
+            self.KF.update(np.concatenate((np.array(measurement), np.array(measurement)-self.previous_measurement), axis=0).reshape(12, 1))
+        else:
+            self.KF.update(np.array(measurement).reshape(6, 1))
+
+        # Update previous measurement
+        self.previous_measurement = np.array(measurement)
+
+        # Empty frequencies list
+        self.frequencies = []
 
 
 
@@ -98,16 +114,15 @@ class Track:
 class Tracker:
 
     def __init__(self, dist_threshold, max_frame_skipped, frequency, robot, requested_yolo_id=-1):
-        self.dist_threshold = dist_threshold
+        self.dist_threshold = dist_threshold # for hungarian algorithm assignment
         self.max_frame_skipped = max_frame_skipped
-        self.current_track_id = 0
+        self.current_track_id = 0 # to give new tracks a unique id
         self.tracks = []
         self.frequency = frequency
         self.skip_frame_count = 0
         self.previous_measurement_exists = False
 
         self.index_product_to_grasp = None
-        self.initial_score_product_to_grasp = None
         self.robot = robot
         self.requested_yolo_id = requested_yolo_id
         self.requested_product_tracked = False
@@ -122,11 +137,12 @@ class Tracker:
         self.previous_measurement_exists = True
         self.prev_time = current_time
         self.update(xyz, classes, scores, 1/float(delta_t)) 
+        
         product_to_grasp = self.choose_desired_product_occurance()
         self.requested_product_tracked = product_to_grasp != None
         if self.requested_product_tracked:
             self.broadcast_product_to_grasp(product_to_grasp)
-        # self.visualize(xyz, product_to_grasp)
+        #self.visualize(xyz, product_to_grasp)
 
 
     def broadcast_product_to_grasp(self, product_to_grasp):
@@ -134,7 +150,7 @@ class Tracker:
         br = tf2_ros.TransformBroadcaster()
         t = TransformStamped()
 
-        x, y, z, theta, phi, psi = product_to_grasp.trace
+        x, y, z, theta, phi, psi = np.array(product_to_grasp.KF.pred_state[:6])
 
         t.header.stamp = rospy.Time.now()
 
@@ -170,61 +186,55 @@ class Tracker:
         width = 600
         height = 600
         frame = np.ones((width,height,3),np.uint8)*255
-        if self.robot:
-            cv2.circle(frame, (int(width/2), 100), 10, (0,0,255), 5)
-            cv2.line(frame, (int(width/2), 100), (int(width/2) - 20, 140), (0,0,255), 1)
-            cv2.line(frame, (int(width/2), 100), (int(width/2) + 20, 140), (0,0,255), 1)
-            cv2.putText(frame, 'Robot Base', (int(width/2)-40, 80), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.8, (0,0,255), 0)
-        else:
-            cv2.circle(frame, (int(width/2), 0), 10, (0,0,255), 5)
-            cv2.line(frame, (int(width/2), 0), (int(width/2) - 20, 40), (0,0,255), 1)
-            cv2.line(frame, (int(width/2), 0), (int(width/2) + 20, 40), (0,0,255), 1)
-            cv2.putText(frame, 'Camera', (int(width/2)-40, 80), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.8, (0,0,255), 0)
-        if self.robot:
-            scale = 300 # convert millimeters to 0.5meters
-        else:
-            scale = 1000 # convert millimeters to meters
+        cv2.circle(frame, (int(width/2), 100), 10, (0,0,255), 5)
+        cv2.line(frame, (int(width/2), 100), (int(width/2) - 20, 140), (0,0,255), 1)
+        cv2.line(frame, (int(width/2), 100), (int(width/2) + 20, 140), (0,0,255), 1)
+        cv2.putText(frame, 'Robot Base', (int(width/2)-40, 80), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.8, (0,0,255), 0)
+        
+        scale = 300 # convert millimeters to 0.5meters
 
         # Draw the measurements
         for measurement in measurements:
-            if self.robot:
-                x = int(scale * measurement[1]) + int(width/2)
-                z = int(scale * measurement[0]) + 100
-            else:
-                x = int(scale * measurement[0]) + int(width/2)
-                z = int(scale * measurement[2])
+            x = int(scale * measurement[1]) + int(width/2)
+            z = int(scale * measurement[0]) + 100
             
             cv2.circle(frame, (x, z), 6, (0,0,0), -1)
         
         # Draw the latest updated states
         for track in self.tracks:
-            updated_state = track.trace
-
-            if self.robot:
-                x = int(scale * updated_state[1]) + int(width/2)
-                z = int(scale *updated_state[0])  + 100
-            else:
-                x = int(scale * updated_state[0]) + int(width/2)
-                z = int(scale *updated_state[2])  
+            updated_state = np.array(track.KF.state)
+            x = int(scale * updated_state[1]) + int(width/2)
+            z = int(scale *updated_state[0])  + 100
+            
             theta = updated_state[4][0]
 
             variance_scale = 3.29 # 99.9 percent confidence
-            axis_length = (int(track.KF.pred_err_cov[0,0]*variance_scale), int(track.KF.pred_err_cov[2,2]*variance_scale))
-            RotatedRect(frame, (x, z), 20, 20, theta, (0,0,255), 3)
-            cv2.ellipse(frame, (x, z), axis_length, 0, 0, 360, (0,255,255), 3)
+            axis_length = (int(track.KF.err_cov[0,0]*variance_scale), int(track.KF.err_cov[2,2]*variance_scale))
+            RotatedRect(frame, (x, z), 25, 25, theta, (0,0,255), 3)
+            cv2.ellipse(frame, (x, z), axis_length, 0, 0, 360, (0,150,150), 3)
             cv2.putText(frame, str(track.classification), (x + 10, z - 10), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (0,200,0), 1)
         
+        # Draw the latest predicted states
+        for track in self.tracks:
+            predicted_state = np.array(track.KF.pred_state)
+            x = int(scale * predicted_state[1]) + int(width/2)
+            z = int(scale *predicted_state[0])  + 100
+            
+            theta = predicted_state[4][0]
+
+            variance_scale = 3.29 # 99.9 percent confidence
+            axis_length = (int(track.KF.pred_err_cov[0,0]*variance_scale), int(track.KF.pred_err_cov[2,2]*variance_scale))
+            RotatedRect(frame, (x, z), 15, 15, theta, (0,0,255), 3)
+            cv2.ellipse(frame, (x, z), axis_length, 0, 0, 360, (0,255,255), 3)
+            cv2.putText(frame, str(track.classification), (x + 10, z - 10), cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.6, (0,200,0), 1)
+
         # product to grasp
         if product_to_grasp != None:
-            updated_state = product_to_grasp.trace
+            updated_state = np.array(product_to_grasp.KF.state)
 
-            if self.robot:
-                x = int(scale * updated_state[1]) + int(width/2)
-                z = int(scale *updated_state[0])  + 100
-            else:
-                
-                x = int(scale * updated_state[0]) + int(width/2)
-                z = int(scale *updated_state[2])
+            x = int(scale * updated_state[1]) + int(width/2)
+            z = int(scale *updated_state[0])  + 100
+            
             theta = updated_state[4][0]
             cv2.circle(frame, (x, z), 15, (0,0,0), 3)
 
@@ -249,6 +259,8 @@ class Tracker:
         self.index_product_to_grasp = self.tracks[occurance_track_indices[np.argmax(occurances)]].track_id
         return self.tracks[np.argmax(occurances)]
 
+
+
     def choose_desired_product_score(self):
         desired_product = self.requested_yolo_id 
         
@@ -265,6 +277,7 @@ class Tracker:
         
         self.index_product_to_grasp = self.tracks[scores_track_indices[np.argmax(scores)]].track_id
         return self.tracks[np.argmax(scores)]
+
 
 
     def calculate_variance_measurements(self, measurement):
@@ -313,13 +326,12 @@ class Tracker:
                 self.tracks[track_idx].skipped_frames = 0
                 self.tracks[track_idx].frequencies = []
     
-                self.calculate_variance_measurements(measurements[measurement_idx])
+                #self.calculate_variance_measurements(measurements[measurement_idx])
             
             # Create new tracks for measurements without track
             assigned_det_idxs = [det_idx for _, det_idx in assignment]
             for i, det in enumerate(measurements):
                 if i not in assigned_det_idxs:
-                    # TODO: do not add tracks that are (0, 0, 0) (bad measurement)
                     self.tracks.append(Track(det, classifications[i], scores[i], self.current_track_id, current_frequency))
                     self.current_track_id += 1
 
@@ -337,7 +349,6 @@ class Tracker:
             # No measurements, update tracks according to prediction
             for i, track in enumerate(self.tracks):
                 # No measurement available, assume prediction is right
-                #TODO: do not update
                 track.update_no_measurement(current_frequency)
 
                 # Keep track of the missed measurements of this object
@@ -348,7 +359,3 @@ class Tracker:
 
         # Predict next position for each track
         [track.KF.predict() for track in self.tracks]
-        
-        # Update traces for visualization
-        for track in self.tracks:                
-            track.trace = np.array(track.KF.state)

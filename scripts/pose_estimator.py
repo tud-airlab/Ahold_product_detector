@@ -6,14 +6,14 @@ from tf.transformations import quaternion_from_euler, euler_from_quaternion
 from geometry_msgs.msg import PoseStamped, Point, Quaternion, Pose, Vector3
 import numpy as np
 from cv_bridge import CvBridge
-from copy import copy, deepcopy
+from copy import copy
 import tf
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 from geometry_msgs.msg import PoseStamped, Point, Quaternion
 from sensor_msgs.msg import CameraInfo
 from rotation_compensation import rotate_image, rotate_bounding_boxes
 from jsk_recognition_msgs.msg import BoundingBoxArray, BoundingBox
-
+from orientation_estimator import OrientationEstimator
 
 # Helpers
 def _it(self):
@@ -47,6 +47,10 @@ class DetectorData:
     def callback(self, data):
         self.data = data
 
+
+
+
+    
 
 class PoseEstimator:
     def __init__(self) -> None:
@@ -120,8 +124,9 @@ class PoseEstimator:
     def estimate_pose_bounding_box(self, z, bbox):
         pixel_vector = np.array([bbox.x, bbox.y, 1])
         scaled_xyz_vector = np.linalg.inv(self.intrinsics) @ pixel_vector.T
-        orientation = [0, 0, 0]
-
+        bboxxyxy = [int(bbox.x - bbox.w/2), int(bbox.y - bbox.h/2), int(bbox.x + bbox.w/2), int(bbox.y + bbox.h/2)]
+        orientation = self.orientation_estimation.get_object_orientation(bboxxyxy)
+        
         return list(z * scaled_xyz_vector) + orientation
 
     def run(self):
@@ -148,8 +153,10 @@ class PoseEstimator:
         # Convert to 3D
         product_poses = ProductPoseArray()
         product_poses.header.stamp = stamp
+        self.orientation_estimation = OrientationEstimator(depth_image=depth_image, camera_intrinsics=self.intrinsics)
 
         boxes_estimated_z = self.estimate_bbox_depth(boxes, depth_image)
+        
         for z, bbox in zip(boxes_estimated_z, boxes):
             if not np.isnan(z):
                 # depth exists and non-zero
@@ -171,7 +178,6 @@ class PoseEstimator:
 
         # Transform to non-moving frame
         transformed_product_poses = self.transform_poses(product_poses)
-
         # Create jsk boundingboxes
         detections = BoundingBoxArray()
         detections.header.frame_id = "base_link"
@@ -190,6 +196,7 @@ class PoseEstimator:
             detection.value = product_pose.score
             detection.label = product_pose.label
             detections.boxes.append(detection)
+
 
         self.pub_results.publish(transformed_product_poses)
         self.pub_detections.publish(detections)

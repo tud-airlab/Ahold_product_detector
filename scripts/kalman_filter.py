@@ -6,25 +6,33 @@ import os
 # The state is defined as [x, y, z, theta, phi, psi]
 class StateSpaceModel():
 
-	def __init__(self, A, B, H, processVariance, measurementVariance) -> None:
+	def __init__(self, A, B, H, processVariance, measurementVariance, config) -> None:
 		self.A = A
 		self.B = B
 		self.H = H
 		self.processVariance = processVariance
 		self.measurementVariance = measurementVariance
-		
+		self.config = config
 		# check if model is valid
-		assert self.A.shape == self.measurementVariance.shape
+		if not self.measurementVariance.shape:
+			self.measurementVariance = np.ones(self.A.shape)*measurementVariance
+		else:
+			assert self.A.shape == self.measurementVariance.shape
 
 	@classmethod
-	def load_model(cls, model_config_path):
+	def load_model(cls, model_config_path, frequency):
 		with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), model_config_path), 'r') as f:
 			config = yaml.safe_load(f)
-			return cls(np.array(config['A']),
+			if 'dt' in config['A']:
+				A_matrix = [1/frequency for value in config['A'] if value == 'dt']
+			else:
+				A_matrix = config['A']
+			return cls(np.array(A_matrix),
 					   np.array(config['B']), 
 					   np.array(config['H']),
 					   np.array(config['processVariance']),
-					   np.array(config['measurementVariance']))
+					   np.array(config['measurementVariance']),
+					   config)
 	
 	def summary(self):
 		print("State Space model summary:")

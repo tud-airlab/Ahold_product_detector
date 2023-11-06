@@ -9,6 +9,8 @@ from ahold_product_detection.msg import ProductPoseArray
 from ahold_product_detection.srv import ChangeProduct, ChangeProductResponse
 import time
 
+VELOCITY = True
+
 class PoseData():
 
     def __init__(self) -> None:
@@ -23,21 +25,33 @@ class ProductTracker():
     def __init__(self) -> None:
         self.frequency = 30
         self.pose_estimation = PoseData()
-        self.tracker = Tracker(
-            dist_threshold=0.1,
-            max_frame_skipped=240,
-            frequency=self.frequency,
-            robot=True,
-        )
+        self.velocity = VELOCITY
+        if self.velocity:
+            self.tracker = Tracker(
+                dist_threshold=1,
+                max_frame_skipped=60,
+                frequency=self.frequency,
+                robot=False,
+            )
+        else:
+            self.tracker = Tracker(
+                dist_threshold=0.1,
+                max_frame_skipped=240,
+                frequency=self.frequency,
+                robot=False)
         self.rate = rospy.Rate(self.frequency) # track products at 30 Hz
         self.change_product = rospy.Service("change_product", ChangeProduct, self.change_product_cb)
         self.publish_is_tracked = rospy.Publisher("~is_tracked", Bool, queue_size=10)
         self.is_tracked = Bool(False)
+
+        self.measure = False
+        self.count = 0
         
 
     def change_product_cb(self, request):
         rospy.loginfo(f"Changing tracked product from {self.tracker.requested_yolo_id} to {request.product_id}")
         self.tracker.requested_yolo_id = request.product_id
+        self.measure = True
         return ChangeProductResponse(success=True)
     
     def run(self):
@@ -62,14 +76,23 @@ class ProductTracker():
         # Publish if tracked
         self.is_tracked.data = self.tracker.requested_product_tracked
         self.publish_is_tracked.publish(self.is_tracked)
+        if self.measure:
+            self.count = self.count + 1
 
+        if self.count > 300:
+            print("Done tracking for 300 iterations")
+            return False
+        
+        return True
 
 if __name__ == "__main__":
     rospy.init_node("product_tracker")
     product_tracker = ProductTracker()
     t0 = time.time()
     while not rospy.is_shutdown():
-        product_tracker.run()
+        b = product_tracker.run()
         product_tracker.rate.sleep()
         # print(f"product tracking rate: {1/(time.time() - t0)}")
         t0 = time.time()
+        if not b:
+            break
