@@ -135,11 +135,20 @@ class ProductDetector:
             "yolo_model",
             "best_complete.pt",
         )
+        weight_path_shelf = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "yolo_model",
+            "shelf_detector.pt",
+        )
         self.model = ultralytics.YOLO(weight_path)
+        self.model_shelf = ultralytics.YOLO(weight_path_shelf)
         self.pub = rospy.Publisher("/detection_results", Detection, queue_size=10)
+        self.pub_shelf = rospy.Publisher("/detection_results_shelf", Detection, queue_size=10)
         self.pub_img = rospy.Publisher("/detection_image", Image, queue_size=10)
         self.pub_img_compressed = rospy.Publisher("/detection_image_compressed", CompressedImage, queue_size=10)
         self.pub_img_barcode = rospy.Publisher("/detection_image_barcode", Image, queue_size=10)
+        self.pub_img_shelf = rospy.Publisher("/detection_image_shelf", Image, queue_size=10)
 
         self.bridge = CvBridge()
 
@@ -148,6 +157,7 @@ class ProductDetector:
         self.start_tablet_subscribers()
         self._barcode = None
         self._check_barcode_timer = rospy.Timer(rospy.Duration(0.1), self.check_barcode_update)
+        self._shelf_detection = True
 
 
     def start_playback_callback(self, msg):
@@ -268,12 +278,10 @@ class ProductDetector:
             agnostic_nms=True,
         )
 
-
         # inverse rotate output
         boxes, angle = self.rotation_compensation.rotate_bounding_boxes(
             results[0].boxes.xywh.cpu().numpy(), rgb_image
         )
-        
 
         scores = results[0].boxes.conf.cpu().numpy()
         labels = results[0].boxes.cls.cpu().numpy()
@@ -283,6 +291,7 @@ class ProductDetector:
         detection_results_msg.rgb_image = rgb_msg
         detection_results_msg.depth_image = depth_msg
         self.pub.publish(detection_results_msg)
+
 
         frame = rotated_rgb_image
         for r in results:
@@ -341,6 +350,41 @@ class ProductDetector:
         frame_with_barcode = annotator2.result()
         raw_image_barcode = self.bridge.cv2_to_imgmsg(frame_with_barcode, encoding="bgr8")
         self.pub_img_barcode.publish(raw_image_barcode)
+
+
+        # Shelf detection
+        results_shelf = []
+        if self._shelf_detection:
+            results_shelf = self.model_shelf.predict(
+                source=rotated_rgb_image,
+                show=False,
+                save=False,
+                verbose=False,
+                device=0,
+                agnostic_nms=True,
+            )
+
+            # inverse rotate output
+            boxes_shelf, angle_shelf = self.rotation_compensation.rotate_bounding_boxes(
+                results_shelf[0].boxes.xywh.cpu().numpy(), rgb_image
+            )
+            scores_shelf = results_shelf[0].boxes.conf.cpu().numpy()
+            labels_shelf = results_shelf[0].boxes.cls.cpu().numpy()
+            detection_results_msg_shelf = self.generate_detection_message(
+                time_stamp, boxes_shelf, scores_shelf, labels_shelf
+            )
+            detection_results_msg_shelf.rgb_image = rgb_msg
+            detection_results_msg_shelf.depth_image = depth_msg
+            self.pub_shelf.publish(detection_results_msg_shelf)
+            annotator3 = Annotator(rotated_rgb_image)
+            for i, box in enumerate(results_shelf[0].boxes):
+                label = int(box.cls)
+                score = scores_shelf[i]
+                annotator3.box_label(box.xyxy[0], label=f'{self.model_shelf.names[label]} {score:.2f}')
+
+            frame_with_shelf = annotator3.result()
+            raw_image_shelf = self.bridge.cv2_to_imgmsg(frame_with_shelf, encoding="bgr8")
+            self.pub_img_shelf.publish(raw_image_shelf)
 
 
         # visualization
