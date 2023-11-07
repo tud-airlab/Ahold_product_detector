@@ -81,7 +81,7 @@ class ProductTracker():
         t.transform.translation.x = x
         t.transform.translation.y = y
         t.transform.translation.z = z
-        q = quaternion_from_euler(0, 0,  psi)
+        q = quaternion_from_euler(theta + np.pi, 0,  psi)
         t.transform.rotation.x = q[0]
         t.transform.rotation.y = q[1]
         t.transform.rotation.z = q[2]
