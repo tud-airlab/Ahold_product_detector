@@ -142,6 +142,7 @@ class Tracker:
         product_to_grasp = self.choose_desired_product_occurance()
         self.requested_product_tracked = product_to_grasp != None
         self.assigned_track = product_to_grasp
+
         if self.requested_product_tracked:
             self.broadcast_product_to_grasp(product_to_grasp)
         #self.visualize(xyz, product_to_grasp)

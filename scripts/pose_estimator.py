@@ -94,13 +94,17 @@ class PoseEstimator:
             new_pose.x = ros_pose_transformed.pose.position.x
             new_pose.y = ros_pose_transformed.pose.position.y
             new_pose.z = ros_pose_transformed.pose.position.z
-            new_pose.theta, pose.phi, pose.psi = euler_from_quaternion(
+            new_pose.theta, new_pose.phi, new_pose.psi = euler_from_quaternion(
                 list(ros_pose_transformed.pose.orientation)
             )
             new_pose.header = pose.header
             new_pose.header.frame_id = "base_link"
             new_pose.label = pose.label
             new_pose.score = pose.score
+            new_pose.u = pose.x
+            new_pose.v = pose.y
+            new_pose.w = pose.w
+            new_pose.h = pose.h
             transformed_poses.poses.append(new_pose)
 
         return transformed_poses
