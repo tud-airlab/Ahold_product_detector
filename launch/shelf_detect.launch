@@ -5,7 +5,7 @@
     <arg name="align_depth" value="$(arg align_depth)"/>
     <arg name="filters" value="pointcloud"/>
   </include>
-  <param name="robot" type="boolean" value="0" />
+  <param name="robot" type="boolean" value="1" />
   <param name="ethernet" type="boolean" value="0" />
 
   <node name="camera_data_processor" pkg="ahold_product_detection" type="process_rgbd.py" output="screen"/>

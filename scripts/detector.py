@@ -141,6 +141,8 @@ class ProductDetector:
         self.pub_img = rospy.Publisher("/detection_image", Image, queue_size=10)
         self.pub_img_compressed = rospy.Publisher("/detection_image_compressed", CompressedImage, queue_size=10)
         self.pub_img_barcode = rospy.Publisher("/detection_image_barcode", Image, queue_size=10)
+        self._trigger_detection = rospy.Subscriber("/product_detector/trigger", Bool, self.trigger_detection)
+        self._currently_detecting = False
 
         self.bridge = CvBridge()
 
@@ -152,6 +154,9 @@ class ProductDetector:
 
         self._assigned_detection_subscriber = rospy.Subscriber('/product_tracker/assigned_detection_image_coordinates', Float32MultiArray, self.assigned_detection_cb)
         self._assigned_detection_uv = [-1, -1]
+    
+    def trigger_detection(self, msg):
+        self._currently_detecting = msg.data
 
     def assigned_detection_cb(self, msg):
         self._assigned_detection_uv = list(msg.data)
@@ -325,11 +330,15 @@ class ProductDetector:
             if self._barcode == None:
                 highest_score_index = -1
             else:
-                # Ensure the barcode is an integer for comparison
-                barcode = int(self._barcode) if self._barcode.isdigit() else None
+                try:
+                    yolo_id = rospy.get_param("requested_yolo_id")
+                except Exception as e:
+                    yolo_id = -1
+                    rospy.logwarn(e)
 
                 # Filter boxes that match the barcode
-                matching_boxes_indices = [i for i, label in enumerate(labels) if product_mapping.get(int(label), None) == barcode]
+                print(yolo_id)
+                matching_boxes_indices = [i for i, label in enumerate(labels) if label == yolo_id]
 
                 # Find the highest score among the matching boxes
                 if matching_boxes_indices:
@@ -375,7 +384,8 @@ if __name__ == "__main__":
     detector = ProductDetector()
     t0 = time.time()
     while not rospy.is_shutdown():
-        detector.run()
+        if detector._currently_detecting:
+            detector.run()
         detector.rate.sleep()
         # print(f"product detection rate: {1/(time.time() - t0)}")
         t0 = time.time()

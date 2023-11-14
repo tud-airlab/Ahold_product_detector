@@ -9,7 +9,7 @@ import tf2_ros
 from geometry_msgs.msg import TransformStamped
 import os
 from opencv_helpers import RotatedRect
-VELOCITY = True
+VELOCITY = False
 if VELOCITY:
     from kalman_filter_velocity import KalmanFilter
 else:
@@ -127,6 +127,7 @@ class Tracker:
         self.robot = robot
         self.requested_yolo_id = requested_yolo_id
         self.requested_product_tracked = False
+        self.shelf_angle = 0
 
     def process_detections(self, xyz, classes, scores):
         current_time = rospy.get_time()
@@ -165,7 +166,13 @@ class Tracker:
         t.transform.translation.x = x
         t.transform.translation.y = y
         t.transform.translation.z = z
-        q = quaternion_from_euler(theta, phi,  np.pi/2)
+        # q = quaternion_from_euler(theta, phi,  np.pi/2)
+        use_shelf_angle = True
+        if use_shelf_angle:
+            q = quaternion_from_euler(np.pi/2, 0,  self.shelf_angle)
+        else:
+            q = quaternion_from_euler(np.pi/2, 0,  psi)
+        # q = quaternion_from_euler(theta + np.pi, 0,  psi)
         t.transform.rotation.x = q[0]
         t.transform.rotation.y = q[1]
         t.transform.rotation.z = q[2]

@@ -9,6 +9,7 @@ import tf
 from multi_object_tracker import Tracker
 from ahold_product_detection.msg import ProductPoseArray
 from ahold_product_detection.srv import ChangeProduct, ChangeProductResponse
+from albert_database.srv import *
 import time
 
 VELOCITY = False
@@ -38,13 +39,16 @@ class ProductTracker():
         else:
             self.tracker = Tracker(
                 dist_threshold=0.1,
-                max_frame_skipped=240,
+                max_frame_skipped=60,
                 frequency=self.frequency,
                 robot=True)
         self.rate = rospy.Rate(self.frequency) # track products at 30 Hz
         self.change_product = rospy.Service("change_product", ChangeProduct, self.change_product_cb)
         self.publish_is_tracked = rospy.Publisher("~is_tracked", Bool, queue_size=10)
         self.publish_image_coordinates = rospy.Publisher("~assigned_detection_image_coordinates", Float32MultiArray, queue_size=10)
+        self.detection_trigger = rospy.Publisher("product_detector/trigger", Bool, queue_size=1)
+        self.database_client = rospy.ServiceProxy('get_product_info', productInfo)
+
         self.is_tracked = Bool(False)
 
         self.measure = False
@@ -53,59 +57,68 @@ class ProductTracker():
         
 
     def change_product_cb(self, request):
-        rospy.loginfo(f"Changing tracked product from {self.tracker.requested_yolo_id} to {request.product_id}")
-        if request.product_id > self.num_classes: # Cover the barcode case
-            mapping = 'mapping_barcode_to_yolo/'+str(request.product_id)
-            try:
-                prod_id = rospy.get_param(mapping) 
-            except Exception as e:
-                rospy.logerr(f"failed to change tracked product, see: {e}")
-                return ChangeProductResponse(success=False)
-        else:
-            prod_id = request.product_id
+        try:
+            self.store_name = rospy.get_param("/store_name")
+            response = self.database_client(request.product_name, self.store_name)
+            mapping = 'mapping_barcode_to_yolo/'+str(response.product_id)
+            prod_id = rospy.get_param(mapping) 
+
+        except Exception as e:
+            rospy.logerr(f"Failed to change tracked product, see {e}")
+            self.detection_trigger.publish(Bool(False))
+            self.tracker.requested_yolo_id = -1
+            return ChangeProductResponse(success=False)
+
+        rospy.loginfo(f"Changing tracked product from {self.tracker.requested_yolo_id} to {prod_id}")
+        self.detection_trigger.publish(Bool(True))
         self.tracker.requested_yolo_id = prod_id
+        self.tracker.shelf_angle = response.shelf_ort * (np.pi/180)
+        rospy.set_param("requested_yolo_id", prod_id)
         print(self.tracker.requested_yolo_id)
         self.measure = True
+
         return ChangeProductResponse(success=True)
 
-    def broadcast_product_to_grasp(self, product_to_grasp):
-        # Convert message to a tf2 frame when message becomes available
-        br = tf2_ros.TransformBroadcaster()
-        t = TransformStamped()
+    # def broadcast_product_to_grasp(self, product_to_grasp):
+    #     # Convert message to a tf2 frame when message becomes available
+    #     br = tf2_ros.TransformBroadcaster()
+    #     t = TransformStamped()
 
-        x, y, z, theta, phi, psi = product_to_grasp
+    #     x, y, z, theta, phi, psi = product_to_grasp
 
-        t.header.stamp = rospy.Time.now()
-        t.header.frame_id = "base_link"
-        t.child_frame_id = 'desired_product'
-        t.transform.translation.x = x
-        t.transform.translation.y = y
-        t.transform.translation.z = z
-        q = quaternion_from_euler(theta + np.pi, 0,  psi)
-        t.transform.rotation.x = q[0]
-        t.transform.rotation.y = q[1]
-        t.transform.rotation.z = q[2]
-        t.transform.rotation.w = q[3]
+    #     t.header.stamp = rospy.Time.now()
+    #     t.header.frame_id = "base_link"
+    #     t.child_frame_id = 'desired_product'
+    #     t.transform.translation.x = x
+    #     t.transform.translation.y = y
+    #     t.transform.translation.z = z
+    #     # q = quaternion_from_euler(theta + np.pi, 0,  psi)
+    #     q = quaternion_from_euler(0, 0,  psi)
+    #     t.transform.rotation.x = q[0]
+    #     t.transform.rotation.y = q[1]
+    #     t.transform.rotation.z = q[2]
+    #     t.transform.rotation.w = q[3]
 
-        br.sendTransform(t)
+    #     br.sendTransform(t)
 
-    def run_debug(self):
-        try:
-            stamp = self.pose_estimation.data.header.stamp
-            product_poses = self.pose_estimation.data
-            xyz_detections = np.array([[p.x, p.y, p.z, p.theta, p.phi, p.psi] for p in product_poses.poses])
-            labels = np.array([p.label for p in product_poses.poses])
-            scores = np.array([p.score for p in product_poses.poses])
+    # def run_debug(self):
+    #     try:
+    #         stamp = self.pose_estimation.data.header.stamp
+    #         product_poses = self.pose_estimation.data
+    #         xyz_detections = np.array([[p.x, p.y, p.z, p.theta, p.phi, p.psi] for p in product_poses.poses])
+    #         labels = np.array([p.label for p in product_poses.poses])
+    #         scores = np.array([p.score for p in product_poses.poses])
 
-            rospy.loginfo(self.tracker.requested_yolo_id)
-            correct_label_idxs = np.where(labels == self.tracker.requested_yolo_id) 
-            max_score_idx = np.argmax(scores[correct_label_idxs])
-            product_to_grasp = xyz_detections[correct_label_idxs][max_score_idx]
-            rospy.loginfo(product_to_grasp)
-            self.broadcast_product_to_grasp(product_to_grasp)
-        except Exception as e:
-            print(e)
-        return True
+    #         rospy.loginfo(self.tracker.requested_yolo_id)
+    #         correct_label_idxs = np.where(labels == self.tracker.requested_yolo_id) 
+    #         max_score_idx = np.argmax(scores[correct_label_idxs])
+    #         product_to_grasp = xyz_detections[correct_label_idxs][max_score_idx]
+    #         rospy.loginfo(product_to_grasp)
+    #         self.broadcast_product_to_grasp(product_to_grasp)
+    #         self.publish_is_tracked.publish(Bool((product_to_grasp is not None)))
+    #     except Exception as e:
+    #         print(e)
+    #     return True
 
     def run(self):
         try:
@@ -149,7 +162,8 @@ if __name__ == "__main__":
     t0 = time.time()
     rospy.sleep(0.5)
     while not rospy.is_shutdown():
-        b = product_tracker.run_debug()
+        # b = product_tracker.run_debug()
+        b = product_tracker.run()
         product_tracker.rate.sleep()
         # print(f"product tracking rate: {1/(time.time() - t0)}")
         t0 = time.time()

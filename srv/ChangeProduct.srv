@@ -1,4 +1,4 @@
-int64 product_id
+string product_name
 
 ---
 bool success
