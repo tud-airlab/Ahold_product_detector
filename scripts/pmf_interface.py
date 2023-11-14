@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import rospy
 import torch
 
 import torch.nn.functional as F
@@ -154,8 +155,11 @@ class PMF:
             return scores, classes
 
     def set_class_to_find(self, class_to_find):
-        self.class_list, class_prototypes = self.prototype_loader.load_prototypes(class_to_find)
-        self.protonet.update_prototypes(class_prototypes)
+        current_class = self.class_list[0] if self.class_list is not None else None
+        if current_class != class_to_find:
+            self.class_list, class_prototypes = self.prototype_loader.load_prototypes(class_to_find)
+            self.protonet.update_prototypes(class_prototypes)
+            rospy.loginfo(f"Detection class set from {current_class} to {class_to_find}")
 
     def get_class_to_find(self):
         return self.class_list[0] if self.class_list is not None else None

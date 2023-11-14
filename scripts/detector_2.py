@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 from pathlib import Path
+from typing import Union
 
 import PIL.Image
 import cv2
@@ -12,7 +13,7 @@ from ahold_product_detection.msg import Detection, RotatedBoundingBox
 from ahold_product_detection.srv import *
 from cv_bridge import CvBridge
 # message and service imports
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from sensor_msgs.msg import Image, PointCloud2
 from ultralytics.utils.plotting import Annotator
 
@@ -96,6 +97,7 @@ class ProductDetector2:
                  dataset_path: Path = None, reload_prototypes: bool = False, image_loader: ImageLoader = IMAGE_LOADER,
                  debug_clf: bool = False, rotate: bool = True):
 
+        self._barcode = None
         self.rotate = rotate
         self.visualize_results = visualize_results
 
@@ -114,6 +116,37 @@ class ProductDetector2:
         self.class_sub = rospy.Subscriber("/detection_class", String, self.set_detection_class)
         self.detection_pub = rospy.Publisher("/detection_results2", Detection, queue_size=10)
         self.visualization_pub = rospy.Publisher("/detection_vis", Image, queue_size=10)
+        self._check_barcode_timer = rospy.Timer(rospy.Duration(0.1), self.check_barcode_update)
+
+        # Parameters from original detector
+        self._currently_recording = False
+        self._currently_playback = False
+        self.start_tablet_subscribers()
+
+    def start_tablet_subscribers(self):
+        self._start_record_sub = rospy.Subscriber("/tablet/start_record", Bool, self.start_record_callback)
+        self._stop_record_sub = rospy.Subscriber("/tablet/stop_record", Bool, self.stop_record_callback)
+        self._playback_subscriber = rospy.Subscriber("/tablet/start_playback", Bool, self.start_playback_callback)
+        self._stop_playback_subscriber = rospy.Subscriber("/tablet/stop_playback", Bool, self.stop_playback_callback)
+
+    def start_playback_callback(self, msg):
+        if msg.data:
+            self._currently_playback = True
+
+    def stop_playback_callback(self, msg):
+        if msg.data:
+            self._currently_playback = False
+
+    def start_record_callback(self, msg):
+        if msg.data:
+            self._currently_recording = True
+            self._barcode = rospy.get_param("/barcode")
+            rospy.loginfo(f"Start recording with barcode: {self._barcode}")
+            rospy.loginfo(f"Barcode type: {type(self._barcode)}")  # Add this line
+
+    def stop_record_callback(self, msg):
+        if msg.data:
+            self._currently_recording = False
 
     @staticmethod
     def _plot_detection_results(frame: Image, bounding_boxes, scores, classes, angle=None, show_cv2=False):
@@ -165,8 +198,18 @@ class ProductDetector2:
 
         return detection_msg
 
-    def set_detection_class(self, class_to_find_msg):
-        self.classifier.set_class_to_find(class_to_find_msg.data)
+    def check_barcode_update(self, event):
+        new_barcode = rospy.get_param("/barcode", None)
+        if new_barcode != self._barcode:
+            self._barcode = new_barcode
+            for class_ in SEEN_CLASSES + UNSEEN_CLASSES:
+                if new_barcode in class_:
+                    self.set_detection_class(class_)
+                    break
+
+    def set_detection_class(self, class_to_find: Union[String, str]):
+        class_to_find = class_to_find.data if isinstance(class_to_find, String) else class_to_find
+        self.classifier.set_class_to_find(class_to_find)
 
     def run(self):
         if self.classifier.get_class_to_find() is not None:
