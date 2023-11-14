@@ -1,3 +1,6 @@
 __pycache__/
 yolo_model/
 *.pt
+.idea/
+
+data/
