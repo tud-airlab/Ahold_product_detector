@@ -1,0 +1,21 @@
+name: pmf
+channels:
+  - conda-forge
+  - defaults
+dependencies:  
+  - python=3.8.1
+  - numpy
+  - tqdm
+  - tensorboard
+  - ml-collections
+  - timm
+  - ftfy
+  - wget
+  - tabulate
+  - pytables
+  - h5py
+  - opencv
+  - pip
+  - pip:
+    - --find-links https://download.pytorch.org/whl/torch_stable.html
+    - --requirement requirements.txt
