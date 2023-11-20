@@ -31,6 +31,16 @@ class RotationCompensation:
         else:
             return rotated_boxes_xywh, phi
 
+    def rotate_point(self, xyz, image_shape=[720, 1280]):
+        x, y, _ = xyz
+        x = x-image_shape[1]/2
+        y = y-image_shape[0]/2
+        new_x = x * np.cos(self.phi) - y * np.sin(self.phi)
+        new_y = x * np.sin(self.phi) + y * np.cos(self.phi)
+        new_x = new_x+image_shape[1]/2
+        new_y = new_y+image_shape[0]/2
+        return np.array([new_x, new_y]) 
+
 
 def rotate_bounding_boxes(boxes_xywh, image, angle):
     centers = boxes_xywh[:, 0:2]
