@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="image_transport" type="republish" name="rgb_compress1" args="raw in:=/detection_image compressed out:=/detection_image"/>
+  <node pkg="image_transport" type="republish" name="rgb_compress2" args="raw in:=/detection_image_barcode compressed out:=/detection_image_barcode"/>
+</launch>

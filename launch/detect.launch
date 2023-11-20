@@ -10,4 +10,8 @@
   <node name="product_detector" pkg="ahold_product_detection" type="detector.py" output="screen"/>
   <node name="product_pose_estimator" pkg="ahold_product_detection" type="pose_estimator.py" output="screen"/>
   <node name="product_tracker" pkg="ahold_product_detection" type="tracker.py" output="screen"/>
+
+  <node pkg="image_transport" type="republish" name="rgb_compress1" args="raw in:=/detection_image compressed out:=/detection_image"/>
+  <node pkg="image_transport" type="republish" name="rgb_compress2" args="raw in:=/detection_image_barcode compressed out:=/detection_image_barcode"/>
+
 </launch>
