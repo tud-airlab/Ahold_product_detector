@@ -32,13 +32,13 @@ class ProductTracker():
         if self.velocity:
             self.tracker = Tracker(
                 dist_threshold=1,
-                max_frame_skipped=60,
+                max_frame_skipped=120,
                 frequency=self.frequency,
                 robot=True,
             )
         else:
             self.tracker = Tracker(
-                dist_threshold=0.1,
+                dist_threshold=0.10,
                 max_frame_skipped=60,
                 frequency=self.frequency,
                 robot=True)
@@ -57,6 +57,12 @@ class ProductTracker():
         
 
     def change_product_cb(self, request):
+        if request.product_name == "":
+            self.detection_trigger.publish(Bool(False))
+            self.tracker.requested_yolo_id = -1
+            rospy.set_param("requested_yolo_id", -1)
+            return ChangeProductResponse(success=True)
+
         try:
             self.store_name = rospy.get_param("/store_name")
             response = self.database_client(request.product_name, self.store_name)
