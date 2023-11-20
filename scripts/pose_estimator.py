@@ -117,7 +117,10 @@ class PoseEstimator:
         )
 
         estimated_z = []
+        crop_multiplier = 0.6
         for x, y, w, h in rotated_bounding_boxes:
+            w = int(0.6*w)
+            h = int(0.6*h)
             depth_path = rotated_depth_image[
                 int(y - (w / 2)) : int(y + (w / 2)), int(x - (h / 2)) : int(x + (h / 2))
             ]
@@ -159,12 +162,20 @@ class PoseEstimator:
         product_poses.header.stamp = stamp
         self.orientation_estimation = OrientationEstimator(depth_image=depth_image, camera_intrinsics=self.intrinsics)
 
-        boxes_estimated_z = self.estimate_bbox_depth(boxes, depth_image)
+        try:
+            boxes_estimated_z = self.estimate_bbox_depth(boxes, depth_image)
+        except Exception as e:
+            rospy.logerr(f"Couldn't estimate bbox depth: ", e)
+            return
         
         for z, bbox in zip(boxes_estimated_z, boxes):
             if not np.isnan(z):
                 # depth exists and non-zero
-                xyz_detection = self.estimate_pose_bounding_box(z, bbox)
+                try:
+                    xyz_detection = self.estimate_pose_bounding_box(z, bbox)
+                except Exception as e:
+                    rospy.logerr(f"Couldn't estimate pose of bounding box: {e}")
+                    return
                 product_pose = ProductPose()
 
                 (
