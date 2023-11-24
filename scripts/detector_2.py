@@ -264,7 +264,7 @@ if __name__ == "__main__":
                                     visualize_results=True,
                                     reload_prototypes=False,
                                     debug_clf=False)
-        # detector.classifier.set_class_to_find("5_AH_Halfvolle_Melk - 8718907056274")
+        detector.classifier.set_class_to_find("5_AH_Halfvolle_Melk - 8718907056274")
     else:
         detector = ProductDetector2(yolo_weights_path=yolo_weights_path,
                                     yolo_conf_threshold=0.2,

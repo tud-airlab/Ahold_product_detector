@@ -48,7 +48,7 @@ class ProtoTypeLoader:
             self.prototype_dict = self.fill_prototype_dict(batch_size=150, path_to_dataset=path_to_dataset)
 
     def load_prototypes(self, class_to_find: str, amount_of_prototypes: int = 5):
-        prototype_dict = self.prototype_dict
+        prototype_dict = self.prototype_dict.copy()
         class_to_find_tensor = prototype_dict.pop(class_to_find)
         class_to_find_tensor = class_to_find_tensor.view(-1, class_to_find_tensor.shape[0])
         other_prototypes_tensor = torch.empty(size=(len(prototype_dict), class_to_find_tensor.shape[1]),
