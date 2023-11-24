@@ -220,9 +220,9 @@ class ProductDetector2:
                 return
 
             rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
-            rgb_image = PIL.Image.fromarray(rgb_image[..., ::-1])  # Convert to PIL image
             if self.rotate:
                 rotated_image, angle = self.rotation_compensation.rotate_image(rgb_image, time_stamp)
+                rgb_image = PIL.Image.fromarray(rotated_image[..., ::-1])  # Convert to PIL image
                 cropped_images, bounding_boxes = self.yolo.predict(source=rotated_image, show=False, save=False,
                                                                    verbose=False, agnostic_nms=True)
                 bounding_boxes, _ = self.rotation_compensation.rotate_bounding_boxes(bounding_boxes, rgb_image, angle)
@@ -232,6 +232,7 @@ class ProductDetector2:
                                                           scores=scores, classes=labels, angle=angle)
                     self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
             else:
+                rgb_image = PIL.Image.fromarray(rgb_image[..., ::-1])  # Convert to PIL image
                 cropped_images, bounding_boxes = self.yolo.predict(source=rgb_image, show=False, save=False,
                                                                    verbose=False, agnostic_nms=True)
                 scores, labels = self.classifier(cropped_images, debug=self.debug_clf)
