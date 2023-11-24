@@ -114,7 +114,7 @@ class ProductDetector2:
         self.debug_clf = debug_clf
 
         self.class_sub = rospy.Subscriber("/detection_class", String, self.set_detection_class)
-        self.detection_pub = rospy.Publisher("/detection_results2", Detection, queue_size=10)
+        self.detection_pub = rospy.Publisher("/detection_results", Detection, queue_size=10)
         self.visualization_pub = rospy.Publisher("/detection_vis", Image, queue_size=10)
         self._check_barcode_timer = rospy.Timer(rospy.Duration(0.1), self.check_barcode_update)
 
@@ -187,7 +187,7 @@ class ProductDetector2:
             bbox_msg.y = int(bbox[1])
             bbox_msg.w = int(bbox[2])
             bbox_msg.h = int(bbox[3])
-            bbox_msg.label = label
+            # bbox_msg.label = label
             bbox_msg.score = score
 
             bboxes_list.append(bbox_msg)
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     rospy.init_node("product_detector_2")
     yolo_weights_path = Path(__file__).parent.parent.joinpath("models", "YOLO_just_products.pt")
     pmf_weights_path = Path(__file__).parent.parent.joinpath("models", "PMF.pth")
-    DEBUG = False  # Flag for testing without robot attached
+    DEBUG = True  # Flag for testing without robot attached
     if DEBUG:
         dataset_path = Path(__file__).parent.parent.joinpath("data", "Custom-Set_FULL")
         detector = ProductDetector2(rotate=False,
@@ -264,7 +264,7 @@ if __name__ == "__main__":
                                     visualize_results=True,
                                     reload_prototypes=False,
                                     debug_clf=False)
-        # detector.classifier.set_class_to_find("5_AH_Halfvolle_Melk - 8718907056274")
+        detector.classifier.set_class_to_find("5_AH_Halfvolle_Melk - 8718907056274")
     else:
         detector = ProductDetector2(yolo_weights_path=yolo_weights_path,
                                     yolo_conf_threshold=0.2,

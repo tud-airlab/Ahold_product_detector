@@ -117,17 +117,13 @@ class Tracker:
     def __init__(self, dist_threshold, max_frame_skipped, frequency, robot, requested_yolo_id=-1):
         self.dist_threshold = dist_threshold # for hungarian algorithm assignment
         self.max_frame_skipped = max_frame_skipped
-        self.current_track_id = 0 # to give new tracks a unique id
-        self.tracks = []
         self.frequency = frequency
         self.skip_frame_count = 0
-        self.previous_measurement_exists = False
-
-        self.index_product_to_grasp = None
         self.robot = robot
         self.requested_yolo_id = requested_yolo_id
-        self.requested_product_tracked = False
-        self.shelf_angle = 0
+        self.reset()
+
+
 
     def process_detections(self, xyz, classes, scores):
         current_time = rospy.get_time()
@@ -310,6 +306,13 @@ class Tracker:
         else:
             self.measurement_variance = ((measurement - self.mean) @ (measurement - self.mean).T) / (self.num_measurements - 1) 
         
+    def reset(self):
+        self.current_track_id = 0 # to give new tracks a unique id
+        self.tracks = []
+        self.previous_measurement_exists = False
+        self.index_product_to_grasp = None
+        self.requested_product_tracked = False
+        self.shelf_angle = 0
 
 
     def update(self, measurements, classifications, scores, current_frequency):
