@@ -198,18 +198,20 @@ class ProductDetector2:
 
         return detection_msg
 
-    def check_barcode_update(self, event):
+    def check_barcode_update(self, _):
         new_barcode = rospy.get_param("/barcode", None)
         if new_barcode != self._barcode:
             self._barcode = new_barcode
-            for class_ in SEEN_CLASSES + UNSEEN_CLASSES:
-                if str(new_barcode) in class_:
-                    self.set_detection_class(class_)
-                    break
+            self.set_detection_class(str(new_barcode))
 
     def set_detection_class(self, class_to_find: Union[String, str]):
         class_to_find = class_to_find.data if isinstance(class_to_find, String) else class_to_find
-        self.classifier.set_class_to_find(class_to_find)
+        for class_ in SEEN_CLASSES + UNSEEN_CLASSES:
+            if class_to_find in class_:
+                self.classifier.set_class_to_find(class_to_find)
+                # TODO: leave the checking actually to the classifier. If not add new class
+                return
+        rospy.logerr(f"Class: {class_to_find} not found!")
 
     def run(self):
         if self.classifier.get_class_to_find() is not None:
@@ -241,6 +243,8 @@ class ProductDetector2:
                                                           classes=labels)
                     self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
 
+            bounding_boxes = bounding_boxes[scores != 0]
+            labels = labels[labels != 0]
             detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes,
                                                                     scores=scores, labels=labels, rgb_msg=rgb_msg,
                                                                     depth_msg=depth_msg)
