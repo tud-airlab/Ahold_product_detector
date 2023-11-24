@@ -244,7 +244,7 @@ class ProductDetector2:
                     self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
 
             bounding_boxes = bounding_boxes[scores != 0]
-            labels = labels[labels != 0]
+            labels = [label for label, score in zip(labels, scores) if score != 0]
             detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes,
                                                                     scores=scores, labels=labels, rgb_msg=rgb_msg,
                                                                     depth_msg=depth_msg)
