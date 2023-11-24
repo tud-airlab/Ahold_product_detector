@@ -1,0 +1,3 @@
+[submodule "scripts/pmf"]
+	path = scripts/pmf
+	url = https://github.com/MrMeepsle/pmf_cvpr22.git
