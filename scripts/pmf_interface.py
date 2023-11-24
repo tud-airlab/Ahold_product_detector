@@ -50,6 +50,7 @@ class ProtoTypeLoader:
     def load_prototypes(self, class_to_find: str, amount_of_prototypes: int = 5):
         prototype_dict = self.prototype_dict.copy()
         class_to_find_tensor = prototype_dict.pop(class_to_find)
+        # If not found, it probably is a new class
         class_to_find_tensor = class_to_find_tensor.view(-1, class_to_find_tensor.shape[0])
         other_prototypes_tensor = torch.empty(size=(len(prototype_dict), class_to_find_tensor.shape[1]),
                                               dtype=torch.float, device=self.device, requires_grad=False)
