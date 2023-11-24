@@ -1,0 +1,32 @@
+name:
+  - ros_env
+channels:
+  - anaconda
+  - pytorch
+  - nvidia
+  - robostack-staging
+dependencies:
+  - python=3.9
+  - compilers
+  - cmake
+  - pkg-config
+  - make
+  - ninja
+  - colcon-common-extensions
+  - catkin_tools
+  - numpy
+  - opencv
+  - ultralytics
+  - scipy
+  - timm
+  - ml-collections
+  - ros-noetic-desktop
+  - ros-noetic-realsense2-camera
+  - ros-noetic-jsk-recognition-msgs
+  - ros-noetic-pcl-conversions
+  - ros-noetic-pcl-ros
+  - ros-noetic-tf-conversions
+  - pytorch==2.1.0=*cuda11.8*
+  - torchvision>=0.15.0=*cu118
+  - torchaudio=*=*cu118
+  - pytorch-cuda=11.8

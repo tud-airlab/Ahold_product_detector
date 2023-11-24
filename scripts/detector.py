@@ -138,7 +138,6 @@ class ProductDetector:
         if msg.data:
             self._currently_recording = False
 
-
     def plot_detection_results(self, frame, results):
         for r in results:
             annotator = Annotator(frame)
@@ -226,7 +225,7 @@ class ProductDetector:
         # rotate input
         rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
         try:
-            rotated_rgb_image = self.rotation_compensation.rotate_image(
+            rotated_rgb_image, _ = self.rotation_compensation.rotate_image(
                 rgb_image, time_stamp
             )
         except Exception as e:
@@ -284,9 +283,8 @@ class ProductDetector:
         raw_image = self.bridge.cv2_to_imgmsg(frame, encoding="bgr8")
         self.pub_img.publish(raw_image)
 
-
         # Draw colored boxes based on the barcode and tabled state
-        
+
         # Check if recording is active and a barcode is set
         #draw_colored_boxes = self._currently_recording and self._barcode is not None
         # draw_colored_boxes = True
@@ -337,7 +335,8 @@ class ProductDetector:
                     continue
 
                 # Draw the box with the determined color
-                annotator2.box_label(box.xyxy[0], label=f'{self.model.names[label_index]} {scores[i]:.2f}', color=box_color)
+                annotator2.box_label(box.xyxy[0], label=f'{self.model.names[label_index]} {scores[i]:.2f}',
+                                     color=box_color)
 
 
             if tracked_product_index != -1:
@@ -364,9 +363,9 @@ class ProductDetector:
         self.pub_img_barcode.publish(raw_image_barcode)
 
         # visualization
-        #self.plot_detection_results(rotated_rgb_image, results)
-        #self.show_rotated_results(rgb_image, boxes, angle)
-        #cv2.waitKey(1)
+        # self.plot_detection_results(rotated_rgb_image, results)
+        # self.show_rotated_results(rgb_image, boxes, angle)
+        # cv2.waitKey(1)
 
 
 import time
