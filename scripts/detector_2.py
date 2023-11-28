@@ -206,15 +206,17 @@ class ProductDetector2:
 
     def set_detection_class(self, class_to_find: Union[String, str]):
         class_to_find = class_to_find.data if isinstance(class_to_find, String) else class_to_find
-        for class_ in SEEN_CLASSES + UNSEEN_CLASSES:
-            if class_to_find in class_:
-                self.classifier.set_class_to_find(class_to_find)
-                # TODO: leave the checking actually to the classifier. If not add new class
-                return
-        rospy.logerr(f"Class: {class_to_find} not found!")
+
+        try:
+            rgb_msg, depth_msg, pointcloud_msg, time_stamp = self.camera.data
+        except Exception as e:
+            rospy.logerr(f"Couldn't read camera data. Error: %s", e)
+            return
+        rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
+        self.classifier.set_class_to_find(class_to_find, rgb_image)
 
     def run(self):
-        if self.classifier.get_class_to_find() is not None:
+        if self.classifier.get_current_class() is not None:
             try:
                 rgb_msg, depth_msg, pointcloud_msg, time_stamp = self.camera.data
             except Exception as e:
