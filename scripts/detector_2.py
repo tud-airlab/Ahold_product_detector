@@ -9,12 +9,13 @@ import numpy as np
 import rospy
 import torch
 import ultralytics
+import tf
 from ahold_product_detection.msg import Detection, RotatedBoundingBox
 from ahold_product_detection.srv import *
 from cv_bridge import CvBridge
 # message and service imports
 from std_msgs.msg import String, Bool
-from sensor_msgs.msg import Image, PointCloud2
+from sensor_msgs.msg import Image, PointCloud2, CameraInfo
 from ultralytics.utils.plotting import Annotator
 
 from opencv_helpers import RotatedRect
@@ -105,6 +106,7 @@ class ProductDetector2:
         self.rotation_compensation = RotationCompensation()
         self.rate = rospy.Rate(30)
         self.bridge = CvBridge()
+        self.tf_listener = tf.TransformListener()
 
         self.yolo = YoloHelper(yolo_weights_path, yolo_conf_threshold, device=device, image_loader=image_loader)
         self.classifier = PMF(pmf_weights_path, classification_confidence_threshold=pmf_conf_threshold,
@@ -115,13 +117,22 @@ class ProductDetector2:
 
         self.class_sub = rospy.Subscriber("/detection_class", String, self.set_detection_class)
         self.detection_pub = rospy.Publisher("/detection_results", Detection, queue_size=10)
-        self.visualization_pub = rospy.Publisher("/detection_vis", Image, queue_size=10)
+        self.visualization_pub = rospy.Publisher("/detection_image", Image, queue_size=10)
         self._check_barcode_timer = rospy.Timer(rospy.Duration(0.1), self.check_barcode_update)
+        self.intrinsics_subscriber = rospy.Subscriber("/camera/color/camera_info", CameraInfo, self.intrinsics_callback)
+        self._status_sub = rospy.Subscriber("/all_nodes_active", Bool, self.nodes_check_cb)
+        self.all_nodes_up = False
 
         # Parameters from original detector
         self._currently_recording = False
         self._currently_playback = False
         self.start_tablet_subscribers()
+
+    def nodes_check_cb(self, msg):
+        self.all_nodes_up = msg.data
+
+    def intrinsics_callback(self, data):
+        self.intrinsics = np.array(data.K).reshape((3, 3))
 
     def start_tablet_subscribers(self):
         self._start_record_sub = rospy.Subscriber("/tablet/start_record", Bool, self.start_record_callback)
@@ -148,11 +159,24 @@ class ProductDetector2:
         if msg.data:
             self._currently_recording = False
 
-    @staticmethod
-    def _plot_detection_results(frame: Image, bounding_boxes, scores, classes, angle=None, show_cv2=False):
+    def get_tracked_product_in_camera_image(self):
+        try:
+            xyz, _ = self.tf_listener.lookupTransform(
+                "/camera_color_optical_frame", "/desired_product", rospy.Time(0)
+            )
+        except Exception as e:
+            rospy.loginfo_throttle(10, f"No tracked product tf found, {e}")
+            return None
+        pixel_vector = self.intrinsics @ xyz 
+        pixel_vector = pixel_vector / pixel_vector[2]
+        pixel_vector = self.rotation_compensation.rotate_point(pixel_vector)
+        return pixel_vector[:2]
+
+    def _plot_detection_results(self, frame: Image, bounding_boxes, scores, classes, angle=None, show_cv2=False):
         """
         Plotting function for showing preliminary detection results for debugging
         """
+
         annotator = Annotator(np.ascontiguousarray(np.asarray(frame)[:, :, ::-1]), font_size=6)
         labels = [f"{class_[:10]}... {score.item():.2f}" if score != 0 else f"{class_}" for class_, score in
                   zip(classes, scores)]
@@ -168,6 +192,18 @@ class ProductDetector2:
         if angle is not None:  # If detection is on rotated image
             frame = rotate_image(frame, 180 * angle / np.pi)
 
+        tracked_product_xy = self.get_tracked_product_in_camera_image()
+        if tracked_product_xy is not None:
+            cv2.circle(frame, np.array(tracked_product_xy).astype(int), radius=20, color=(255, 0, 0), thickness=-1)
+
+        # Draw status circle
+        if self.all_nodes_up:
+            status_color = (0, 255, 0) # colors in BGR 
+        else:
+            status_color = (0, 0, 255) 
+        self.status_radius = 20
+        cv2.circle(frame, np.array([1.5*self.status_radius, 1.5*self.status_radius]).astype(int), radius=self.status_radius, color=status_color, thickness=-1)
+
         if show_cv2:
             cv2.imshow("Result", frame)
             cv2.waitKey(1)
@@ -180,17 +216,18 @@ class ProductDetector2:
         detection_msg.header.stamp = time_stamp
 
         bboxes_list = []
-        for bbox, label, score in zip(boxes.xywh, labels, scores):
-            bbox_msg = RotatedBoundingBox()
+        for bbox, label, score in zip(boxes, labels, scores):
+            if score >0:
+                bbox_msg = RotatedBoundingBox()
 
-            bbox_msg.x = int(bbox[0])
-            bbox_msg.y = int(bbox[1])
-            bbox_msg.w = int(bbox[2])
-            bbox_msg.h = int(bbox[3])
-            # bbox_msg.label = label
-            bbox_msg.score = score
+                bbox_msg.x = int(bbox[0])
+                bbox_msg.y = int(bbox[1])
+                bbox_msg.w = int(bbox[2])
+                bbox_msg.h = int(bbox[3])
+                # bbox_msg.label = label
+                bbox_msg.score = score
 
-            bboxes_list.append(bbox_msg)
+                bboxes_list.append(bbox_msg)
 
         detection_msg.detections = bboxes_list
         detection_msg.rgb_image = rgb_msg
@@ -205,12 +242,21 @@ class ProductDetector2:
             self.set_detection_class(str(new_barcode))
 
     def set_detection_class(self, class_to_find: Union[String, str]):
+        rospy.loginfo("received request to change clas")
         class_to_find = class_to_find.data if isinstance(class_to_find, String) else class_to_find
+
+        if class_to_find == "":
+            rospy.logerr("received request to disable detection")
+            self.classifier.set_class_to_find(None)
+            return
+
         for class_ in SEEN_CLASSES + UNSEEN_CLASSES:
             if class_to_find in class_:
-                self.classifier.set_class_to_find(class_to_find)
+                rospy.loginfo(class_)
+                self.classifier.set_class_to_find(class_)
                 # TODO: leave the checking actually to the classifier. If not add new class
                 return
+        self.classifier.set_class_to_find(None)
         rospy.logerr(f"Class: {class_to_find} not found!")
 
     def run(self):
@@ -224,38 +270,42 @@ class ProductDetector2:
             rgb_image = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="bgr8")
             if self.rotate:
                 rotated_image, angle = self.rotation_compensation.rotate_image(rgb_image, time_stamp)
-                rgb_image = PIL.Image.fromarray(rotated_image[..., ::-1])  # Convert to PIL image
+                rotated_image = PIL.Image.fromarray(rotated_image[..., ::-1])  # Convert to PIL image
                 cropped_images, bounding_boxes = self.yolo.predict(source=rotated_image, show=False, save=False,
                                                                    verbose=False, agnostic_nms=True)
-                bounding_boxes, _ = self.rotation_compensation.rotate_bounding_boxes(bounding_boxes, rgb_image, angle)
+                bounding_boxes_xywh, _ = self.rotation_compensation.rotate_bounding_boxes(bounding_boxes.xywh.cpu(), rgb_image, angle)
                 scores, labels = self.classifier(cropped_images, debug=self.debug_clf)
                 if self.visualize_results:
                     result = self._plot_detection_results(frame=rotated_image, bounding_boxes=bounding_boxes,
-                                                          scores=scores, classes=labels, angle=angle)
+                                                          scores=scores, classes=labels)
                     self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
+                detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes_xywh,
+                                                                    scores=scores, labels=labels, rgb_msg=rgb_msg,
+                                                                    depth_msg=depth_msg)
+                self.detection_pub.publish(detection_results_msg)
             else:
                 rgb_image = PIL.Image.fromarray(rgb_image[..., ::-1])  # Convert to PIL image
                 cropped_images, bounding_boxes = self.yolo.predict(source=rgb_image, show=False, save=False,
                                                                    verbose=False, agnostic_nms=True)
                 scores, labels = self.classifier(cropped_images, debug=self.debug_clf)
                 if self.visualize_results:
+    
                     result = self._plot_detection_results(frame=rgb_image, bounding_boxes=bounding_boxes, scores=scores,
                                                           classes=labels)
                     self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
-
-            bounding_boxes = bounding_boxes[scores != 0]
-            labels = [label for label, score in zip(labels, scores) if score != 0]
-            detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes,
+                    detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes,
                                                                     scores=scores, labels=labels, rgb_msg=rgb_msg,
                                                                     depth_msg=depth_msg)
-            self.detection_pub.publish(detection_results_msg)
+                    self.detection_pub.publish(detection_results_msg)
+
+            
 
 
 if __name__ == "__main__":
     rospy.init_node("product_detector_2")
     yolo_weights_path = Path(__file__).parent.parent.joinpath("models", "YOLO_just_products.pt")
     pmf_weights_path = Path(__file__).parent.parent.joinpath("models", "PMF.pth")
-    DEBUG = True  # Flag for testing without robot attached
+    DEBUG = False  # Flag for testing without robot attached
     if DEBUG:
         dataset_path = Path(__file__).parent.parent.joinpath("data", "Custom-Set_FULL")
         detector = ProductDetector2(rotate=False,
@@ -273,9 +323,12 @@ if __name__ == "__main__":
         detector = ProductDetector2(yolo_weights_path=yolo_weights_path,
                                     yolo_conf_threshold=0.2,
                                     pmf_weights_path=pmf_weights_path,
-                                    pmf_conf_threshold=0.65,
+                                    pmf_conf_threshold=0.80,
                                     device="cuda:0",
                                     visualize_results=True)
     while not rospy.is_shutdown():
-        detector.run()
+        try:
+            detector.run()
+        except Exception as e:
+            rospy.logerr(f"Couldn't run detection because of: {e}")
         detector.rate.sleep()

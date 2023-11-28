@@ -29,15 +29,15 @@ class ProductTracker():
 
         self.pose_estimation = PoseData()
         self.tracker = Tracker(
-            dist_threshold=0.10,
-            max_frame_skipped=60,
+            dist_threshold=0.05,
+            max_frame_skipped=90,
             frequency=self.frequency,
             robot=True)
 
         self.change_product = rospy.Service("change_product", ChangeProduct, self.change_product_cb)
         self.publish_is_tracked = rospy.Publisher("~is_tracked", Bool, queue_size=10)
         self.is_tracked = Bool(False)
-        self.detection_class_pub = rospy.Publisher("/detection_class", String, queue_size=1)
+        self.detection_class_pub = rospy.Publisher("/detection_class", String, queue_size=10)
         self.database_client = rospy.ServiceProxy('get_product_info', productInfo)
         # self.update_detector = rospy.ServiceProxy('/detection_class', String)
 
@@ -51,6 +51,7 @@ class ProductTracker():
             rospy.loginfo("Disabling tracking")
             self.track = False
             self.tracked_product = request.product_name
+            self.detection_class_pub.publish(String())
         elif self.tracked_product == request.product_name:
             rospy.loginfo("Product is already tracked")
             self.track = True
@@ -61,7 +62,7 @@ class ProductTracker():
                 response = self.database_client(request.product_name, self.store_name)
 
                 rospy.loginfo(f"Updating detector to detect {request.product_name}")
-                self.detection_class_pub.publish(String(request.product_id))
+                self.detection_class_pub.publish(String(str(response.product_id)))
 
                 rospy.loginfo(f"Resetting tracker to track {request.product_name}")
                 self.tracker.reset()
@@ -90,7 +91,7 @@ class ProductTracker():
                 self.pose_estimation.previous_stamp = stamp
 
             except Exception as e:
-                rospy.logerr(f"not executing tracking loop because of: {e}")
+                rospy.logerr_throttle(10, f"not executing tracking loop because of: {e}")
                 xyz_detections = []
                 labels = []
                 scores = []

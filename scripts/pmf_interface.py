@@ -156,6 +156,11 @@ class PMF:
             return scores, classes
 
     def set_class_to_find(self, class_to_find):
+        if class_to_find is None:
+            self.protonet.prototypes = None
+            self.class_list = None
+            return
+
         current_class = self.class_list[0] if self.class_list is not None else None
         if current_class != class_to_find:
             self.class_list, class_prototypes = self.prototype_loader.load_prototypes(class_to_find)

@@ -2,7 +2,7 @@
 from geometry_msgs.msg import TransformStamped
 import numpy as np
 import rospy
-from std_msgs.msg import Bool, Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray, String
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 import tf2_ros
 import tf
@@ -45,6 +45,7 @@ class ProductTracker():
         self.rate = rospy.Rate(self.frequency) # track products at 30 Hz
         self.change_product = rospy.Service("change_product", ChangeProduct, self.change_product_cb)
         self.publish_is_tracked = rospy.Publisher("~is_tracked", Bool, queue_size=10)
+        self.detection_class_pub = rospy.Publisher("/detection_class", String, queue_size=1)
         self.publish_image_coordinates = rospy.Publisher("~assigned_detection_image_coordinates", Float32MultiArray, queue_size=10)
         self.detection_trigger = rospy.Publisher("product_detector/trigger", Bool, queue_size=1)
         self.database_client = rospy.ServiceProxy('get_product_info', productInfo)
@@ -58,7 +59,6 @@ class ProductTracker():
 
     def change_product_cb(self, request):
         if request.product_name == "":
-            self.detection_trigger.publish(Bool(False))
             self.tracker.requested_yolo_id = -1
             rospy.set_param("requested_yolo_id", -1)
             return ChangeProductResponse(success=True)
@@ -71,12 +71,11 @@ class ProductTracker():
 
         except Exception as e:
             rospy.logerr(f"Failed to change tracked product, see {e}")
-            self.detection_trigger.publish(Bool(False))
             self.tracker.requested_yolo_id = -1
             return ChangeProductResponse(success=False)
 
+        self.detection_class_pub.publish(String(response.product_id))
         rospy.loginfo(f"Changing tracked product from {self.tracker.requested_yolo_id} to {prod_id}")
-        self.detection_trigger.publish(Bool(True))
         self.tracker.requested_yolo_id = prod_id
         self.tracker.shelf_angle = response.shelf_ort * (np.pi/180)
         rospy.set_param("requested_yolo_id", prod_id)

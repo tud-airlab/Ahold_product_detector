@@ -4,7 +4,7 @@ import rospy
 import cv2
 from cv_bridge import CvBridge
 import ultralytics
-from ultralytics.yolo.utils.plotting import Annotator
+from ultralytics.utils.plotting import Annotator
 import os
 import numpy as np
 from multi_object_tracker import Tracker
