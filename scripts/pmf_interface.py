@@ -8,12 +8,12 @@ import rospy
 import torch
 
 import torch.nn.functional as F
-import torchvision
 from torch import nn
 
 import pmf.models.vision_transformer as vit
 from pmf.models import ProtoNet
 from pmf_data_helpers import IMAGE_LOADER, ImageLoader
+from roi_selector import ROISelector
 
 
 class StaticProtoNet(ProtoNet):
@@ -46,8 +46,9 @@ class ProtoTypeLoader:
         self.image_loader = image_loader
         self.device = device
         self.prototype_dict = prototype_dict
-        self.partly_loaded_classes = set()
         self.path_to_dataset = path_to_dataset
+        self.roi_selector = ROISelector()
+        self.unset_class = None
         if self.prototype_dict is None:
             self.prototype_dict = self._fill_prototype_dict(batch_size=150, path_to_dataset=path_to_dataset)
 
@@ -69,60 +70,34 @@ class ProtoTypeLoader:
 
         class_prototype_tensor = torch.cat((class_to_find_tensor, other_prototypes_tensor[top_indices]), dim=0)
         classes = [class_name] + [list(prototype_dict.keys())[idx] for idx in top_indices.tolist()]
-        new_dict = False
         return classes, class_prototype_tensor
 
     def get_current_class(self):
-        return self.classes[0] if self.classes is not None else None
+        if self.classes is not None:
+            return self.classes[0]
 
-    def load_prototypes(self, barcode: str, image_with_class: Optional = None, amount_of_prototypes: int = 5):
-        new_dict = True
+    def load_prototypes(self, barcode: str, amount_of_prototypes: int = 5):
         if self.get_current_class() is None or barcode not in self.get_current_class():
             for class_name in self.prototype_dict.keys():
                 if barcode in class_name:
-                    self.classes, self.prototypes = self._load_prototypes_from_dict(class_name, amount_of_prototypes)
+                    self.classes, prototypes = self._load_prototypes_from_dict(class_name, amount_of_prototypes)
                     rospy.loginfo(f"Detection class set to {class_name}")
-                    return self.classes, self.prototypes, ~new_dict
+                    return self.classes, prototypes
 
-            class_name = input("What would you like to call this class? \n") + " - " + barcode
-            rospy.loginfo(f"Setting detection class to {class_name}")
-            self.classes, self.prototypes = self._select_and_save_class_images(image_with_class, class_name,
-                                                                               amount_of_prototypes)
-            return self.classes, self.prototypes, new_dict
+            class_name = input("New class detected. What would you like to call this class? \n") + " - " + barcode
+            self.unset_class = class_name
 
-        else:
-            for class_name in self.partly_loaded_classes:
-                if barcode in class_name:
-                    rospy.loginfo(f"Updating {class_name}!")
-                    self.classes, self.prototypes = self._select_and_save_class_images(image_with_class, class_name,
-                                                                                       amount_of_prototypes)
-                    return self.classes, self.prototypes, new_dict
-
-    def _select_and_save_class_images(self, image, class_name, amount_of_prototypes):
-        regions = cv2.selectROIs(f"Select class: {class_name}", image)
-        cv2.destroyAllWindows()
-        if len(regions) != 0:
-            if self.path_to_dataset is None:
-                output_directory = Path(__file__).parent.joinpath(class_name)
-                rospy.logwarn(f"No path to dataset provided, output directory will be: {output_directory}")
-            else:
-                output_directory = self.path_to_dataset.joinpath(class_name)
-                rospy.loginfo(f"Output will be written to: {output_directory}")
-            output_directory.mkdir(exist_ok=True)
-            for r in regions:
-                imCrop = image[int(r[1]):int(r[1] + r[3]), int(r[0]):int(r[0] + r[2])]
-                cv2.imwrite(str(output_directory.joinpath(uuid.uuid4().hex + ".png")), imCrop)
-            rospy.loginfo(f"Saved image in directory: {output_directory}")
+    def unset_class_selection_wizard(self, annotated_img, raw_img, amount_of_prototypes, vis_result=True):
+        class_ = self.unset_class
+        output_directory, self.unset_class = self.roi_selector(annotated_img, raw_img, class_,
+                                                               self.path_to_dataset, vis_result)
+        if output_directory is not None:
             class_prototype = self._calculate_class_prototype(output_directory)
-            self.prototype_dict[class_name] = class_prototype
-            classes, class_prototype_tensor = self._load_prototypes_from_dict(class_name, amount_of_prototypes)
-
-            rospy.logwarn("Would you like to add more examples of this class? [y/n]")
-            if input() == 'y':
-                self.partly_loaded_classes.add(class_name)
-            else:
-                self.partly_loaded_classes.discard(class_name)
-            return classes, class_prototype_tensor
+            self.prototype_dict[class_] = class_prototype
+            self.classes, class_prototype_tensor = self._load_prototypes_from_dict(class_, amount_of_prototypes)
+            return self.classes, class_prototype_tensor
+        else:
+            return None, None
 
     def _calculate_class_prototype(self, class_dir, batch_size=150):
         images = [image for image in class_dir.iterdir() if image.is_file()]
@@ -163,7 +138,8 @@ class ProtoTypeLoader:
 
 class PMF:
     def __init__(self, pmf_model_path: Path, image_loader: ImageLoader, classification_confidence_threshold: float,
-                 path_to_dataset: Optional[Path] = None, reload_prototypes: bool = False, device="cuda:0"):
+                 path_to_dataset: Optional[Path] = None, reload_prototypes: bool = False, device="cuda:0",
+                 amount_of_prototypes=5):
         self.pmf_path = pmf_model_path
         pmf_dict = torch.load(self.pmf_path)
         if 'image_loader' not in pmf_dict or image_loader != pmf_dict['image_loader']:
@@ -190,6 +166,7 @@ class PMF:
                                                     device=self.device)
 
         self.class_list = None
+        self.amount_of_prototypes = amount_of_prototypes
 
         if 0 <= classification_confidence_threshold < 1:
             self.clf_confidence_threshold = classification_confidence_threshold
@@ -218,15 +195,20 @@ class PMF:
             classes = [self.get_current_class() if score != 0 else "_" for score in scores.tolist()]
             return scores, classes
 
-    def set_class_to_find(self, class_to_find, img_with_class=None):
-        class_list, class_prototypes, new_prototype_dict = (self.prototype_loader.load_prototypes(class_to_find,
-                                                                                                  img_with_class)
-                                                            or (None, None, None))
+    def set_class_to_find(self, class_to_find):
+        class_list, class_prototypes = self.prototype_loader.load_prototypes(class_to_find,
+                                                                             self.amount_of_prototypes) or (None, None)
         if class_list is not None and class_prototypes is not None:
             self.class_list = class_list
             self.protonet.update_prototypes(class_prototypes)
-            if new_prototype_dict:
-                self.save_model_dict(self.pmf_path)
 
     def get_current_class(self):
-        self.prototype_loader.get_current_class()
+        return self.prototype_loader.get_current_class()
+
+    def check_for_new_class_selection(self, annotated_img, raw_img, vis_results=True):
+        class_list, class_prototypes = self.prototype_loader.unset_class_selection_wizard(annotated_img, raw_img,
+                                                                                          self.amount_of_prototypes)
+        if class_list is not None and class_prototypes is not None:
+            self.class_list = class_list
+            self.protonet.update_prototypes(class_prototypes)
+            self.save_model_dict(self.pmf_path)

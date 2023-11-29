@@ -86,23 +86,7 @@ SEEN_CLASSES = ['10_AH_Sesam_Woksaus - 8718907306744',
                 '7_AH_Kwarktaart_Aardbei - 8710400687122',
                 '8_AH_Magere_Melk - 8718907056311',
                 '9_AH_Rodekool - 8710400145981']
+
 SEEN_COLOR = (107, 191, 61)
-
-UNSEEN_CLASSES = ['1_AH_Brownies - 8718907400718',
-                  '25_HAK_Bruine_Bonen - 8720600612848',
-                  '2_AH_Cheesecake - 8718907457583',
-                  '37_AH_Mini_Friet - 8718906948631',
-                  '42_Lenor_Wasverzachter_Orchidee - 8006540896778',
-                  '4_AH_Fijngesneden_Tomaten - 8718906697560',
-                  '54_AH_bio_appel_sap - 8718906124073',
-                  '0_AH_Bio_Houdbare_Halfvolle_Melk - 8710400280507',
-                  '11_AH_Sweet_Basil_Woksaus - 8718907306775',
-                  '12_AH_Sweet_and_Sour_Woksaus - 8718907306737',
-                  '28_Kokh_Thai_Groene_Curry - 8717662264382',
-                  '44_RedBull_Cactusvrucht - 90453656',
-                  '45_RedBull_Energy_Drink - 90453533',
-                  '47_Spa_Reine - 5410013136149',
-                  '5_AH_Halfvolle_Melk - 8718907056274']
 UNSEEN_COLOR = (97, 165, 232)
-
 DEFAULT_COLOR = (133, 143, 153)
