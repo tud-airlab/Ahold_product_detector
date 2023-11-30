@@ -85,7 +85,7 @@ class PoseEstimator:
             )
             try:
                 ros_pose_transformed = self.tf_listener.transformPose(
-                    "base_link", ros_pose
+                    "base_link_fake", ros_pose
                 )
             except Exception as e:
                 rospy.logerr("couldn't transform correctly ", e)
@@ -98,7 +98,7 @@ class PoseEstimator:
                 list(ros_pose_transformed.pose.orientation)
             )
             new_pose.header = pose.header
-            new_pose.header.frame_id = "base_link"
+            new_pose.header.frame_id = "base_link_fake"
             new_pose.label = pose.label
             new_pose.score = pose.score
             new_pose.u = pose.x
@@ -199,10 +199,10 @@ class PoseEstimator:
 
         # Create jsk boundingboxes
         detections = BoundingBoxArray()
-        detections.header.frame_id = "base_link"
+        detections.header.frame_id = "base_link_fake"
         for product_pose in transformed_product_poses.poses:
             detection = BoundingBox()
-            detection.header.frame_id = "base_link"
+            detection.header.frame_id = "base_link_fake"
             detection.pose = Pose(
                 position=Point(x=product_pose.x, y=product_pose.y, z=product_pose.z),
                 orientation=Quaternion(

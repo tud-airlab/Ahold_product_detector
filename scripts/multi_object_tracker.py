@@ -121,6 +121,7 @@ class Tracker:
         self.skip_frame_count = 0
         self.robot = robot
         self.requested_yolo_id = requested_yolo_id
+        self.br = tf2_ros.TransformBroadcaster()
         self.reset()
 
 
@@ -147,7 +148,6 @@ class Tracker:
 
     def broadcast_product_to_grasp(self, product_to_grasp):
         # Convert message to a tf2 frame when message becomes available
-        br = tf2_ros.TransformBroadcaster()
         t = TransformStamped()
 
         x, y, z, theta, phi, psi = np.array(product_to_grasp.KF.pred_state[:6])
@@ -155,7 +155,7 @@ class Tracker:
         t.header.stamp = rospy.Time.now()
 
         if self.robot:
-            t.header.frame_id = "base_link"
+            t.header.frame_id = "base_link_fake"
         else:
             t.header.frame_id = "camera_color_optical_frame"
         t.child_frame_id = 'desired_product'
@@ -174,7 +174,7 @@ class Tracker:
         t.transform.rotation.z = q[2]
         t.transform.rotation.w = q[3]
 
-        br.sendTransform(t)
+        self.br.sendTransform(t)
 
 
         
