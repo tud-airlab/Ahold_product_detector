@@ -161,6 +161,7 @@ class PMF:
             self.save_model_dict(self.pmf_path)
         else:
             self.prototype_loader = ProtoTypeLoader(feature_extractor=self.protonet.backbone,
+                                                    path_to_dataset=path_to_dataset,
                                                     prototype_dict=pmf_dict["prototype_dict"],
                                                     image_loader=image_loader,
                                                     device=self.device)
