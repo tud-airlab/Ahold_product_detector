@@ -137,7 +137,7 @@ class Tracker:
         self.prev_time = current_time
         self.update(xyz, classes, scores, 1/float(delta_t)) 
         
-        product_to_grasp = self.choose_desired_product_occurance()
+        product_to_grasp = self.choose_desired_product_distance()
         self.requested_product_tracked = product_to_grasp != None
         self.assigned_track = product_to_grasp
 
@@ -247,6 +247,22 @@ class Tracker:
         return frame
 
 
+    def choose_desired_product_distance(self):
+        desired_product = self.requested_yolo_id 
+        
+        # if already chosen a product to pick AND the product is still tracked by the tracker
+        if self.index_product_to_grasp != None and self.index_product_to_grasp in [track.track_id for track in self.tracks]:
+            track = [track for track in self.tracks if track.track_id == self.index_product_to_grasp][0]
+            return track
+        
+        # product not yet chosen OR not tracked anymore, choose product that is closest to base_link_fake
+        dists = np.array([track.dist for track in self.tracks if track.classification == desired_product])
+        dist_track_indices = np.array([i for i, track in enumerate(self.tracks) if track.classification == desired_product])
+        if len(dists) == 0:
+            return None
+        
+        self.index_product_to_grasp = self.tracks[dist_track_indices[np.argmin(dists)]].track_id
+        return self.tracks[np.argmin(dists)]
 
     def choose_desired_product_occurance(self):
         desired_product = self.requested_yolo_id 
