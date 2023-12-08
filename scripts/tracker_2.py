@@ -50,10 +50,12 @@ class ProductTracker():
         if request.product_name == "":
             rospy.loginfo("Disabling tracking")
             self.track = False
+            self.tracked_product_barcode = None
             self.tracked_product = request.product_name
             self.detection_class_pub.publish(String())
         elif self.tracked_product == request.product_name:
             rospy.loginfo("Product is already tracked")
+            self.detection_class_pub.publish(String(str(self.tracked_product_barcode)))
             self.track = True
         else:
             try:
@@ -69,6 +71,7 @@ class ProductTracker():
                 self.tracker.shelf_angle = response.shelf_ort * (np.pi/180)
                 self.track = True
                 self.tracked_product = request.product_name
+                self.tracked_product_barcode = response.product_id
             except Exception as e:
                 rospy.logerr(f"Failed to change tracked product, see {e}")
                 return ChangeProductResponse(success=False)

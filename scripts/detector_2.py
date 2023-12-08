@@ -236,8 +236,13 @@ class ProductDetector2:
             self.set_detection_class(str(new_barcode))
 
     def set_detection_class(self, class_to_find: Union[String, str]):
-        rospy.loginfo("received request to change clas")
         class_to_find = class_to_find.data if isinstance(class_to_find, String) else class_to_find
+        if class_to_find == "":
+            rospy.logerr("received request to disable detection")
+            self.classifier.set_class_to_find(None)
+            return
+
+        rospy.loginfo("received request to change clas")
         self.classifier.set_class_to_find(class_to_find)
 
     def run(self):

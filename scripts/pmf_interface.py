@@ -198,11 +198,26 @@ class PMF:
             return scores, classes
 
     def set_class_to_find(self, class_to_find):
+        current_class = self.class_list[0] if self.class_list is not None else None
+
+        if current_class == class_to_find:
+            rospy.loginfo(f"Detection class already set {current_class}")
+            return
+
+
+        if class_to_find is None:
+            rospy.loginfo(f"Detection class set from {current_class} to {class_to_find}")
+            self.protonet.prototypes = None
+            self.class_list = None
+            return
+
         class_list, class_prototypes = self.prototype_loader.load_prototypes(class_to_find,
                                                                              self.amount_of_prototypes) or (None, None)
+
         if class_list is not None and class_prototypes is not None:
             self.class_list = class_list
             self.protonet.update_prototypes(class_prototypes)
+            rospy.loginfo(f"Detection class set from {current_class} to {class_to_find}")
 
     def get_current_class(self):
         return self.prototype_loader.get_current_class()
