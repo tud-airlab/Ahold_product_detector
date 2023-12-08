@@ -153,45 +153,6 @@ class Tracker:
             self.broadcast_product_to_grasp(product_to_grasp)
         #self.visualize(xyz, product_to_grasp)
 
-        self.publish_kalman_markers()
-
-    def publish_kalman_markers(self):
-        
-        # Create a MarkerArray message
-        marker_array = MarkerArray()
-        
-        # Set the namespace for the markers
-        marker_array.ns = "kalman_markers"
-        
-        # Loop through Kalman filter states and add markers to the array
-        for idx, track in enumerate(self.tracks):
-            marker = Marker()
-            marker.header.frame_id = "base_link"  # Change the frame_id according to your setup
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
-            marker.scale.x = 0.1  # Adjust the scale according to your preference
-            marker.scale.y = 0.1
-            marker.scale.z = 0.1
-            marker.color.a = 1.0
-            marker.color.r = 1.0
-            
-            # Set the marker ID
-            marker.id = track.track_id
-            
-            # Set the marker pose
-            state = track.KF.state
-            marker.pose.position = Point(state[0], state[1], state[2])
-            marker.pose.orientation = Quaternion(*state[3:])  # Assuming state[3:] represents the orientation
-            
-            # Set the marker lifetime
-            marker.lifetime = rospy.Duration(1)
-
-            # Add the marker to the array
-            marker_array.markers.append(marker)
-
-        # Publish the MarkerArray
-        self.marker_array_pub.publish(marker_array)
-
     def broadcast_product_to_grasp(self, product_to_grasp):
         # Convert message to a tf2 frame when message becomes available
         t = TransformStamped()
