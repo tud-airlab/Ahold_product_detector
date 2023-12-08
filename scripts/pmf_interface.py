@@ -84,7 +84,8 @@ class ProtoTypeLoader:
                     rospy.loginfo(f"Detection class set to {class_name}")
                     return self.classes, prototypes
 
-            class_name = input("New class detected. What would you like to call this class? \n") + " - " + barcode
+            # class_name = input("New class detected. What would you like to call this class? \n") + " - " + barcode
+            class_name = barcode
             self.unset_class = class_name
 
     def unset_class_selection_wizard(self, annotated_img, raw_img, amount_of_prototypes, vis_result=True):

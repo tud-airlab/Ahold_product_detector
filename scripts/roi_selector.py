@@ -88,6 +88,6 @@ class ROISelector:
             else:
                 output_directory = path_to_dataset.joinpath(class_name)
                 rospy.loginfo(f"Output will be written to: {output_directory}")
-            output_directory.mkdir(exist_ok=True)
+            output_directory.mkdir(exist_ok=True,parents=True)
             cv2.imwrite(str(output_directory.joinpath(uuid.uuid4().hex + ".png")), cropped_img)
             return output_directory, unset_class
