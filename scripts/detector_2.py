@@ -165,16 +165,16 @@ class ProductDetector2:
         except Exception as e:
             rospy.loginfo_throttle(10, f"No tracked product tf found, {e}")
             return None
-        pixel_vector = self.intrinsics @ xyz 
+        pixel_vector = self.intrinsics @ xyz
         pixel_vector = pixel_vector / pixel_vector[2]
         pixel_vector = self.rotation_compensation.rotate_point(pixel_vector)
         return pixel_vector[:2]
 
-    def _plot_detection_results(self, frame: Image, bounding_boxes, scores, classes, angle=None, show_cv2=False):
+    def _plot_detection_results(self, frame: Image, bounding_boxes, scores, classes):
         """
         Plotting function for showing preliminary detection results for debugging
         """
-        raw_image = np.ascontiguousarray(np.asarray(result)[:, :, ::-1])
+        raw_image = np.ascontiguousarray(np.asarray(frame)[:, :, ::-1])
         annotator = Annotator(raw_image.copy(), font_size=6)
         labels = [f"{class_[:10]}... {score.item():.2f}" if score != 0 else f"{class_}" for class_, score in
                   zip(classes, scores)]
@@ -189,22 +189,20 @@ class ProductDetector2:
 
         result = annotator.result()
 
-        return result, raw_image
         tracked_product_xy = self.get_tracked_product_in_camera_image()
         if tracked_product_xy is not None:
             cv2.circle(frame, np.array(tracked_product_xy).astype(int), radius=20, color=(255, 0, 0), thickness=-1)
 
         # Draw status circle
         if self.all_nodes_up:
-            status_color = (0, 255, 0) # colors in BGR 
+            status_color = (0, 255, 0)  # colors in BGR
         else:
-            status_color = (0, 0, 255) 
+            status_color = (0, 0, 255)
         self.status_radius = 20
-        cv2.circle(frame, np.array([1.5*self.status_radius, 1.5*self.status_radius]).astype(int), radius=self.status_radius, color=status_color, thickness=-1)
+        cv2.circle(frame, np.array([1.5 * self.status_radius, 1.5 * self.status_radius]).astype(int),
+                   radius=self.status_radius, color=status_color, thickness=-1)
 
-        if show_cv2:
-            cv2.imshow("Result", frame)
-            cv2.waitKey(1)
+        return result, raw_image
 
     @staticmethod
     def generate_detection_message(time_stamp, boxes, scores, labels, rgb_msg, depth_msg) -> Detection:
@@ -213,7 +211,7 @@ class ProductDetector2:
 
         bboxes_list = []
         for bbox, label, score in zip(boxes, labels, scores):
-            if score >0:
+            if score > 0:
                 bbox_msg = RotatedBoundingBox()
 
                 bbox_msg.x = int(bbox[0])
@@ -256,32 +254,36 @@ class ProductDetector2:
                 rotated_image = PIL.Image.fromarray(rotated_image[..., ::-1])  # Convert to PIL image
                 cropped_images, bounding_boxes = self.yolo.predict(source=rotated_image, show=False, save=False,
                                                                    verbose=False, agnostic_nms=True)
-                bounding_boxes_xywh, _ = self.rotation_compensation.rotate_bounding_boxes(bounding_boxes.xywh.cpu(), rgb_image, angle)
+                bounding_boxes_xywh, _ = self.rotation_compensation.rotate_bounding_boxes(bounding_boxes.xywh.cpu(),
+                                                                                          rgb_image, angle)
                 scores, labels = self.classifier(cropped_images, debug=self.debug_clf)
+
+                result, raw_image = self._plot_detection_results(frame=rotated_image, bounding_boxes=bounding_boxes,
+                                                                 scores=scores, classes=labels)
                 if self.visualize_results:
-                    result = self._plot_detection_results(frame=rotated_image, bounding_boxes=bounding_boxes,
-                                                          scores=scores, classes=labels)
                     self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
-                detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes_xywh,
-                                                                    scores=scores, labels=labels, rgb_msg=rgb_msg,
-                                                                    depth_msg=depth_msg)
+                self.classifier.check_for_new_class_selection(result, raw_image, vis_results=self.visualize_results)
+                detection_results_msg = self.generate_detection_message(time_stamp=time_stamp,
+                                                                        boxes=bounding_boxes_xywh,
+                                                                        scores=scores, labels=labels, rgb_msg=rgb_msg,
+                                                                        depth_msg=depth_msg)
                 self.detection_pub.publish(detection_results_msg)
             else:
                 rgb_image = PIL.Image.fromarray(rgb_image[..., ::-1])  # Convert to PIL image
                 cropped_images, bounding_boxes = self.yolo.predict(source=rgb_image, show=False, save=False,
                                                                    verbose=False, agnostic_nms=True)
                 scores, labels = self.classifier(cropped_images, debug=self.debug_clf)
-                if self.visualize_results:
-    
-                    result = self._plot_detection_results(frame=rgb_image, bounding_boxes=bounding_boxes, scores=scores,
-                                                          classes=labels)
-                    self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
-                    detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes,
-                                                                    scores=scores, labels=labels, rgb_msg=rgb_msg,
-                                                                    depth_msg=depth_msg)
-                    self.detection_pub.publish(detection_results_msg)
 
-            
+                result, raw_image = self._plot_detection_results(frame=rgb_image, bounding_boxes=bounding_boxes,
+                                                                 scores=scores,
+                                                                 classes=labels)
+                if self.visualize_results:
+                    self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
+                self.classifier.check_for_new_class_selection(result, raw_image, vis_results=self.visualize_results)
+                detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes,
+                                                                        scores=scores, labels=labels, rgb_msg=rgb_msg,
+                                                                        depth_msg=depth_msg)
+                self.detection_pub.publish(detection_results_msg)
 
 
 if __name__ == "__main__":
