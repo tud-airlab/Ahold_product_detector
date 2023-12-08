@@ -191,7 +191,7 @@ class ProductDetector2:
 
         tracked_product_xy = self.get_tracked_product_in_camera_image()
         if tracked_product_xy is not None:
-            cv2.circle(frame, np.array(tracked_product_xy).astype(int), radius=20, color=(255, 0, 0), thickness=-1)
+            cv2.circle(raw_image, np.array(tracked_product_xy).astype(int), radius=20, color=(255, 0, 0), thickness=-1)
 
         # Draw status circle
         if self.all_nodes_up:
@@ -199,7 +199,7 @@ class ProductDetector2:
         else:
             status_color = (0, 0, 255)
         self.status_radius = 20
-        cv2.circle(frame, np.array([1.5 * self.status_radius, 1.5 * self.status_radius]).astype(int),
+        cv2.circle(raw_image, np.array([1.5 * self.status_radius, 1.5 * self.status_radius]).astype(int),
                    radius=self.status_radius, color=status_color, thickness=-1)
 
         return result, raw_image
@@ -280,7 +280,7 @@ class ProductDetector2:
                 if self.visualize_results:
                     self.visualization_pub.publish(self.bridge.cv2_to_imgmsg(result))
                 self.classifier.check_for_new_class_selection(result, raw_image, vis_results=self.visualize_results)
-                detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes,
+                detection_results_msg = self.generate_detection_message(time_stamp=time_stamp, boxes=bounding_boxes.xywh.cpu(),
                                                                         scores=scores, labels=labels, rgb_msg=rgb_msg,
                                                                         depth_msg=depth_msg)
                 self.detection_pub.publish(detection_results_msg)
