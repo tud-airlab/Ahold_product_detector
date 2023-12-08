@@ -6,13 +6,26 @@ authors = ["Chadi Salmi <c.salmi@tudelft.nl>"]
 readme = "README.md"
 packages = [{include = "ahold_product_detector"}]
 
-[tool.poetry.dependencies]
-python = "^3.8"
-ultralytics = "^8.0.128"
-roslibpy = "^1.5.0"
-rospkg = "^1.5.0"
-
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+torch = {version = "2.1.1+cu118", source = "torch"}
+torchvision = {version = "0.16.0", source = "torch"}
+pyyaml = "^6.0.1"
+rospkg = "^1.5.0"
+opencv-python = "^4.8.1.78"
+ultralytics = "^8.0.216"
+timm = "^0.9.11"
+ml-collections = "^0.1.1"
+
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "default"
+
+[[tool.poetry.source]]
+name = "torch"
+url = "https://download.pytorch.org/whl/cu118"
+priority = "supplemental"
