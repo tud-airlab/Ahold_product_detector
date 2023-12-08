@@ -68,6 +68,7 @@ class ProductTracker():
                 self.tracker.reset()
                 self.tracker.shelf_angle = response.shelf_ort * (np.pi/180)
                 self.track = True
+                self.tracked_product = request.product_name
             except Exception as e:
                 rospy.logerr(f"Failed to change tracked product, see {e}")
                 return ChangeProductResponse(success=False)

@@ -323,7 +323,7 @@ if __name__ == "__main__":
         detector = ProductDetector2(yolo_weights_path=yolo_weights_path,
                                     yolo_conf_threshold=0.2,
                                     pmf_weights_path=pmf_weights_path,
-                                    pmf_conf_threshold=0.80,
+                                    pmf_conf_threshold=0.70,
                                     device="cuda:0",
                                     visualize_results=True)
     while not rospy.is_shutdown():

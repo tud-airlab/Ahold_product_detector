@@ -26,11 +26,12 @@ class Track:
             state = np.array(measurement) 
             self.KF = KalmanFilter(init_state=state, frequency=frequency, model=StateSpaceModel.load_model("../state_space_models/position.yaml", frequency))
         self.track_id = track_id
+        self.n_detections = 1
         self.skipped_frames = 0
         self.classifications = {}
         self.frequencies = []
         self.classification = None
-        self.score = None
+        self.score = score
         self.occurance = None
         self.range_threshold = 2.0
         self.previous_measurement = np.array([0, 0, 0, 0, 0, 0])
@@ -58,7 +59,7 @@ class Track:
         occurances = np.array([c[0] for c in values])
         scores = [c[1] for c in values] 
         self.classification = classes[np.argmax(occurances)]
-        self.score = scores[np.argmax(occurances)] # mean score that most occurring class has
+        # self.score = scores[np.argmax(occurances)] # mean score that most occurring class has
         self.occurance = np.max(occurances)
 
 
@@ -79,7 +80,10 @@ class Track:
     
 
     def update(self, measurement, classification, score, frequency):
+        self.n_detections += 1
+
         # Add classification to classifications
+        self.score = score
         if classification == classification and score == score:
             self.classifications = self.update_classifications_and_scores(self.classifications, classification, score)
 
@@ -123,7 +127,6 @@ class Tracker:
         self.requested_yolo_id = requested_yolo_id
         self.br = tf2_ros.TransformBroadcaster()
         self.reset()
-
 
 
     def process_detections(self, xyz, classes, scores):
@@ -251,54 +254,61 @@ class Tracker:
         desired_product = self.requested_yolo_id 
         
         # if already chosen a product to pick AND the product is still tracked by the tracker
-        if self.index_product_to_grasp != None and self.index_product_to_grasp in [track.track_id for track in self.tracks]:
-            track = [track for track in self.tracks if track.track_id == self.index_product_to_grasp][0]
+        if self.previous_best_track_id != None and self.previous_best_track_id in [track.track_id for track in self.tracks]:
+            track = [track for track in self.tracks if track.track_id == self.previous_best_track_id][0]
             return track
+        elif len(self.tracks) == 0:
+            return None
         
         # product not yet chosen OR not tracked anymore, choose product that is closest to base_link_fake
-        dists = np.array([track.dist for track in self.tracks if track.classification == desired_product])
-        dist_track_indices = np.array([i for i, track in enumerate(self.tracks) if track.classification == desired_product])
-        if len(dists) == 0:
-            return None
-        
-        self.index_product_to_grasp = self.tracks[dist_track_indices[np.argmin(dists)]].track_id
-        return self.tracks[np.argmin(dists)]
+        best_track = None 
+        most_confident = np.max([track.score for track in self.tracks])
+        for track in self.tracks:
+            if track.n_detections < 2 or track.classification != desired_product:
+                continue
+            if (most_confident - track.score) > 0.10:
+                continue  
+            if best_track == None or track.dist < best_track.dist:
+                best_track = track
+        if best_track != None:
+            self.previous_best_track_id = best_track.track_id
+        return best_track
 
-    def choose_desired_product_occurance(self):
-        desired_product = self.requested_yolo_id 
+    # def choose_desired_product_occurance(self):
+    #     desired_product = self.requested_yolo_id 
         
-        # if already chosen a product to pick AND the product is still tracked by the tracker
-        if self.index_product_to_grasp != None and self.index_product_to_grasp in [track.track_id for track in self.tracks]:
-            track = [track for track in self.tracks if track.track_id == self.index_product_to_grasp][0]
-            return track
+    #     # if already chosen a product to pick AND the product is still tracked by the tracker
+    #     if self.index_product_to_grasp != None and self.index_product_to_grasp in [track.track_id for track in self.tracks]:
+    #         track = [track for track in self.tracks if track.track_id == self.index_product_to_grasp][0]
+    #         return track
         
-        # product not yet chosen OR not tracked anymore, choose product that is most often classified as desired product
-        occurances = np.array([track.occurance for track in self.tracks if track.classification == desired_product])
-        occurance_track_indices = np.array([i for i, track in enumerate(self.tracks) if track.classification == desired_product])
-        if len(occurances) == 0:
-            return None
+    #     # product not yet chosen OR not tracked anymore, choose product that is most often classified as desired product
+    #     occurances = np.array([track.occurance for track in self.tracks if track.classification == desired_product])
+    #     occurance_track_indices = np.array([i for i, track in enumerate(self.tracks) if track.classification == desired_product])
+    #     if len(occurances) == 0:
+    #         return None
         
-        self.index_product_to_grasp = self.tracks[occurance_track_indices[np.argmax(occurances)]].track_id
-        return self.tracks[np.argmax(occurances)]
+    #     self.index_product_to_grasp = self.tracks[occurance_track_indices[np.argmax(occurances)]].track_id
+    #     return self.tracks[np.argmax(occurances)]
 
 
 
-    def choose_desired_product_score(self):
-        desired_product = self.requested_yolo_id 
+    # def choose_desired_product_score(self):
+    #     desired_product = self.requested_yolo_id 
         
-        # if already chosen a product to pick AND the product is still tracked by the tracker
-        if self.index_product_to_grasp != None and self.index_product_to_grasp in [track.track_id for track in self.tracks]:
-            track = [track for track in self.tracks if track.track_id == self.index_product_to_grasp][0]
-            return track
+    #     # if already chosen a product to pick AND the product is still tracked by the tracker
+    #     if self.index_product_to_grasp != None and self.index_product_to_grasp in [track.track_id for track in self.tracks]:
+    #         track = [track for track in self.tracks if track.track_id == self.index_product_to_grasp][0]
+    #         return track
         
-        # product not yet chosen OR not tracked anymore, choose product that is most often classified as desired product
-        scores = np.array([track.score for track in self.tracks if track.classification == desired_product])
-        scores_track_indices = np.array([i for i, track in enumerate(self.tracks) if track.classification == desired_product])
-        if len(scores) == 0:
-            return None
+    #     # product not yet chosen OR not tracked anymore, choose product that is most often classified as desired product
+    #     scores = np.array([track.score for track in self.tracks if track.classification == desired_product])
+    #     scores_track_indices = np.array([i for i, track in enumerate(self.tracks) if track.classification == desired_product])
+    #     if len(scores) == 0:
+    #         return None
         
-        self.index_product_to_grasp = self.tracks[scores_track_indices[np.argmax(scores)]].track_id
-        return self.tracks[np.argmax(scores)]
+    #     self.index_product_to_grasp = self.tracks[scores_track_indices[np.argmax(scores)]].track_id
+    #     return self.tracks[np.argmax(scores)]
 
 
 
@@ -326,7 +336,7 @@ class Tracker:
         self.current_track_id = 0 # to give new tracks a unique id
         self.tracks = []
         self.previous_measurement_exists = False
-        self.index_product_to_grasp = None
+        self.previous_best_track_id = None
         self.requested_product_tracked = False
         self.shelf_angle = 0
 
@@ -351,10 +361,13 @@ class Tracker:
 
             # Update state of existing tracks with measurement
             for track_idx, measurement_idx in assignment:
-                self.tracks[track_idx].update(measurements[measurement_idx], classifications[measurement_idx], scores[measurement_idx], current_frequency)
-                self.tracks[track_idx].latest_measurement_idx = measurement_idx
-                self.tracks[track_idx].skipped_frames = 0
-                self.tracks[track_idx].frequencies = []
+                try:
+                    self.tracks[track_idx].update(measurements[measurement_idx], classifications[measurement_idx], scores[measurement_idx], current_frequency)
+                    self.tracks[track_idx].latest_measurement_idx = measurement_idx
+                    self.tracks[track_idx].skipped_frames = 0
+                    self.tracks[track_idx].frequencies = []
+                except Exception as e:
+                    rospy.logerr(f"skipped track update because the self.tracks changed after the linear sum assignment, see {e}")
     
                 #self.calculate_variance_measurements(measurements[measurement_idx])
             
