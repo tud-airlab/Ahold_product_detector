@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import cv2
 import ultralytics
-from ahold_product_detection.srv import *
+from ahold_product_detection.srv import AddClass, AddClassResponse, GetCroppedImages, GetCroppedImagesResponse
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CompressedImage
 from std_msgs.msg import String
@@ -77,13 +77,14 @@ class YoloHelper(ultralytics.YOLO):
             stream=stream,
             predictor=predictor,
             device=self._device,
+            verbose=False,
             **kwargs,
         )[0]
         bounding_boxes = prediction.boxes[
             prediction.boxes.conf > self.bounding_box_conf_threshold
         ]
-        cropped_images = self._crop_img_with_bounding_boxes(source, bounding_boxes)
-        return cropped_images, bounding_boxes
+        cropped_images, images_pmf = self._crop_img_with_bounding_boxes(source, bounding_boxes)
+        return cropped_images, images_pmf, bounding_boxes
 
     def _crop_img_with_bounding_boxes(
         self, image: PIL.Image.Image, bounding_boxes: ultralytics.engine.results.Boxes
@@ -103,6 +104,7 @@ class YoloHelper(ultralytics.YOLO):
             requires_grad=False,
         )
         i = 0
+        cropped_images = []
         for cx, cy, width, height in bounding_boxes.xywh:
             cropped_image = image.crop(
                 (
@@ -112,9 +114,10 @@ class YoloHelper(ultralytics.YOLO):
                     int(cy + height / 2),
                 )
             )
+            cropped_images.append(cropped_image)
             multi_image_tensor[i] = self._image_loader(cropped_image)
             i += 1
-        return multi_image_tensor
+        return cropped_images, multi_image_tensor
 
 
 class ProductDetector:
@@ -125,8 +128,9 @@ class ProductDetector:
         self.rgb_subscriber = rospy.Subscriber(
             "/camera/color/image_raw", Image, self.rgb_callback
         )
+        rospy.wait_for_message('/camera/color/image_raw', Image)
         self.result_publisher = rospy.Publisher(
-            "/product_detector/result_image", CompressedImage
+            "/product_detector/result_image/compressed", CompressedImage, queue_size=1
         )
         self.curent_class_publisher = rospy.Publisher(
             "/product_detector/current_class", String
@@ -160,17 +164,36 @@ class ProductDetector:
     # 3. send the selected images to the add_class service. This service will also change the current class
     
     def provide_cropped_images(self, req):
-        return GetCroppedImagesResponse(cropped_images=self.cropped_images)
+        cropped_image_msg_list = []
+        for cropped_image in self.cropped_images:
+            # cropped_image = np.transpose(np.array(cropped_image), (1, 2, 0))  # Now the shape is (80, 80, 3)
+            cropped_image = np.array(cropped_image)
+            cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB)
+            cropped_image_msg = self.bridge.cv2_to_compressed_imgmsg(cropped_image)
+            cropped_image_msg_list.append(cropped_image_msg)
+        return GetCroppedImagesResponse(cropped_images=cropped_image_msg_list)
 
     def add_class(self, req):
-        print(req)
+        cropped_images = []
+        for img_msg in req.cropped_images:
+            img = self.bridge.compressed_imgmsg_to_cv2(img_msg)
+            cropped_images.append(img)
+        self.classifier.add_class(req.name, cropped_images)
+        print(req.name)
+        # class_prototype = self.classifier._calculate_class_prototype(output_directory)
+        # self.prototype_dict[class_] = class_prototype
+        # self.classes, class_prototype_tensor = self._load_prototypes_from_dict(class_, amount_of_prototypes)
+        # return self.classes, class_prototype_tensor
+        # print(req)
         return AddClassResponse(success=True)
 
     def rgb_callback(self, msg):
         self.rgb_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        rotated_image, self.angle = self.rotation_compensation.rotate_image(
-            self.rgb_image, msg.header.stamp
-        )
+        # rotated_image, self.angle = self.rotation_compensation.rotate_image(
+        #     self.rgb_image, msg.header.stamp
+        # )
+        rotated_image = self.rgb_image
+        self.angle = 0
         self.rotated_image = PIL.Image.fromarray(
             rotated_image[..., ::-1]
         )  # Convert to PIL image
@@ -180,12 +203,12 @@ class ProductDetector:
             return
         else:
             # Step 1: Detect product bounding box proposals with yolo
-            self.cropped_images, bounding_boxes = self.yolo.predict(
+            self.cropped_images, images_pmf, bounding_boxes = self.yolo.predict(
                 source=self.rotated_image, agnostic_nms=True
             )
 
             # Step 2: Binary classification according to currently requested class
-            scores, labels = self.classifier(self.cropped_images)
+            scores, labels = self.classifier(images_pmf)
 
             # Step 3: Send or show result
             result, raw_image = plot_detection_results(
@@ -202,8 +225,8 @@ class ProductDetector:
             )
 
             if SHOW:
-                cv2.imshow(result)
-                cv2.wait_key(0)
+                cv2.imshow("output", result)
+                cv2.waitKey(1)
 
 
 if __name__ == "__main__":
@@ -214,11 +237,10 @@ if __name__ == "__main__":
     pmf_weights_path = Path(__file__).parent.parent.joinpath("models", "PMF_fuller.pth")
 
     detector = ProductDetector(yolo_weights_path, pmf_weights_path)
-    detector.classifier.set_class_to_find("6_AH_Hollandse_Bruine_Bonen - 8710400035862")
+    detector.classifier.set_class_to_find("test")
 
     while not rospy.is_shutdown():
         try:
-            print("running detection")
             detector.run()
         except Exception as e:
             rospy.logerr(f"Couldn't run detection because of: {e}")

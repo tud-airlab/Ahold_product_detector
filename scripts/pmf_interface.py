@@ -87,6 +87,10 @@ class ProtoTypeLoader:
             # class_name = input("New class detected. What would you like to call this class? \n") + " - " + barcode
             class_name = barcode
             self.unset_class = class_name
+    
+    def add_class_prototype(self, class_name, class_dir):
+        class_prototype = self._calculate_class_prototype(class_dir)
+        self.prototype_dict[class_name] = class_prototype
 
     def unset_class_selection_wizard(self, annotated_img, raw_img, amount_of_prototypes, vis_result=True):
         class_ = self.unset_class
@@ -174,6 +178,29 @@ class PMF:
             self.clf_confidence_threshold = classification_confidence_threshold
         else:
             raise Exception("No valid confidence threshold supplied")
+    
+    def add_class(self, class_name, cropped_images):
+        # Step 1. Save images to disk
+        if self.prototype_loader.path_to_dataset is None:
+            output_directory = Path(__file__).parent.joinpath(class_name)
+            rospy.logwarn(f"No path to dataset provided, output directory will be: {output_directory}")
+        else:
+            output_directory = self.prototype_loader.path_to_dataset.joinpath(class_name)
+            rospy.loginfo(f"Output will be written to: {output_directory}")
+        output_directory.mkdir(exist_ok=True,parents=True)
+        for img in cropped_images:
+            cv2.imwrite(str(output_directory.joinpath(uuid.uuid4().hex + ".png")), img)
+
+        # Step 2. Add class prototype to prototype dict
+        class_prototype = self.prototype_loader._calculate_class_prototype(output_directory)
+        self.prototype_loader.prototype_dict[class_name] = class_prototype
+
+        # Step 3. Update the model
+        class_list, class_prototypes = self.prototype_loader._load_prototypes_from_dict(class_name, self.amount_of_prototypes)
+        self.prototype_loader.classes = class_list
+        self.class_list = class_list
+        self.protonet.update_prototypes(class_prototypes)
+        self.save_model_dict(self.pmf_path)
 
     def save_model_dict(self, path: Path):
         print("Saving prototype loader")
@@ -196,24 +223,27 @@ class PMF:
             scores[indices != 0] = 0
             classes = [self.get_current_class() if score != 0 else "_" for score in scores.tolist()]
             return scores, classes
+        
+    @property
+    def current_class(self):
+        return self.class_list[0] if self.class_list is not None else None
 
     def set_class_to_find(self, class_to_find):
-        current_class = self.class_list[0] if self.class_list is not None else None
-
+        current_class = self.current_class
+        rospy.loginfo(f"current class : {current_class} new class : {class_to_find}")
         if current_class == class_to_find:
             rospy.loginfo(f"Detection class already set {current_class}")
             return
 
 
-        if class_to_find is None:
-            rospy.loginfo(f"Detection class set from {current_class} to {class_to_find}")
-            self.protonet.prototypes = None
-            self.class_list = None
-            return
+        # if class_to_find is None:
+        #     rospy.loginfo(f"Detection class set from {current_class} to {class_to_find}")
+        #     self.protonet.prototypes = None
+        #     self.class_list = None
+        #     return
 
         class_list, class_prototypes = self.prototype_loader.load_prototypes(class_to_find,
                                                                              self.amount_of_prototypes) or (None, None)
-
         if class_list is not None and class_prototypes is not None:
             self.class_list = class_list
             self.protonet.update_prototypes(class_prototypes)
@@ -223,8 +253,9 @@ class PMF:
         return self.prototype_loader.get_current_class()
 
     def check_for_new_class_selection(self, annotated_img, raw_img, vis_results=True):
+        print("checking for new class")
         class_list, class_prototypes = self.prototype_loader.unset_class_selection_wizard(annotated_img, raw_img,
-                                                                                          self.amount_of_prototypes)
+                                                                                          self.amount_of_prototypes, vis_results)
         if class_list is not None and class_prototypes is not None:
             self.class_list = class_list
             self.protonet.update_prototypes(class_prototypes)

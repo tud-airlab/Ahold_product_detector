@@ -1,5 +1,5 @@
 string name
-uint8[][] cropped_images
+sensor_msgs/CompressedImage[] cropped_images
 
 ---
 
