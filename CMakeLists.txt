@@ -34,6 +34,8 @@ add_service_files(
    ChangeProduct.srv
    AddClass.srv
    GetCroppedImages.srv
+   GetClassNames.srv
+   SetDetectionClass.srv
 )
 
 ## Generate actions in the 'action' folder
