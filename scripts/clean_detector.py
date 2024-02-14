@@ -169,7 +169,11 @@ class ProductDetector:
         )
 
     def set_detection_class(self, req):
-        self.classifier.set_class_to_find(req.class_name)
+        class_name = req.class_name.strip()
+        class_list, class_prototypes = self.classifier.prototype_loader._load_prototypes_from_dict(class_name, self.classifier.amount_of_prototypes)
+        self.classifier.prototype_loader.classes = class_list
+        self.class_list = class_list
+        self.classifier.protonet.update_prototypes(class_prototypes)
         return SetDetectionClassResponse(success=True)
 
     def get_class_names(self, req):
