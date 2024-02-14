@@ -7,7 +7,7 @@ import torch
 import numpy as np
 import cv2
 import ultralytics
-from ahold_product_detection.srv import AddClass, AddClassResponse, GetCroppedImages, GetCroppedImagesResponse
+from ahold_product_detection.srv import AddClass, AddClassResponse, GetCroppedImages, GetCroppedImagesResponse, GetClassNames, GetClassNamesResponse, SetDetectionClass, SetDetectionClassResponse
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CompressedImage
 from std_msgs.msg import String
@@ -140,6 +140,16 @@ class ProductDetector:
             AddClass,
             self.add_class 
         )
+        self.get_class_names_service = rospy.Service(
+            "/product_detector/get_class_names",
+            GetClassNames,
+            self.get_class_names 
+        )
+        self.set_detection_class_service = rospy.Service(
+            "/product_detector/set_detection_class",
+            SetDetectionClass,
+            self.set_detection_class 
+        )
         self.get_cropped_images_service = rospy.Service(
             "/product_detector/get_cropped_images",
             GetCroppedImages,
@@ -158,10 +168,13 @@ class ProductDetector:
             device="cuda:0",
         )
 
-    # workflow:
-    # 1. request cropped images using service
-    # 2. select the images on the user interface
-    # 3. send the selected images to the add_class service. This service will also change the current class
+    def set_detection_class(self, req):
+        self.classifier.set_class_to_find(req.class_name)
+        return SetDetectionClassResponse(success=True)
+
+    def get_class_names(self, req):
+        class_names = self.classifier.prototype_loader.prototype_dict.keys()
+        return GetClassNamesResponse(class_names=class_names)
     
     def provide_cropped_images(self, req):
         cropped_image_msg_list = []
@@ -179,21 +192,13 @@ class ProductDetector:
             img = self.bridge.compressed_imgmsg_to_cv2(img_msg)
             cropped_images.append(img)
         self.classifier.add_class(req.name, cropped_images)
-        print(req.name)
-        # class_prototype = self.classifier._calculate_class_prototype(output_directory)
-        # self.prototype_dict[class_] = class_prototype
-        # self.classes, class_prototype_tensor = self._load_prototypes_from_dict(class_, amount_of_prototypes)
-        # return self.classes, class_prototype_tensor
-        # print(req)
         return AddClassResponse(success=True)
 
     def rgb_callback(self, msg):
         self.rgb_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        # rotated_image, self.angle = self.rotation_compensation.rotate_image(
-        #     self.rgb_image, msg.header.stamp
-        # )
-        rotated_image = self.rgb_image
-        self.angle = 0
+        rotated_image, self.angle = self.rotation_compensation.rotate_image(
+            self.rgb_image, msg.header.stamp
+        )
         self.rotated_image = PIL.Image.fromarray(
             rotated_image[..., ::-1]
         )  # Convert to PIL image
